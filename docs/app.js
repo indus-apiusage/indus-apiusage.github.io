@@ -253,6 +253,48 @@ function renderHeroMarquee(payload, selectedDay, days) {
     .join("")
 }
 
+function renderHeroMonthFocus(payload, selectedDay, days) {
+  const currency = normalizeCurrency(payload.currency)
+  const currentMonth = monthSnapshot(days, selectedDay?.date || payload.summary.latestDate || days.at(-1)?.date)
+  const focus = qs("#hero-month-focus")
+
+  if (!focus) {
+    return
+  }
+
+  focus.innerHTML = currentMonth.endDate
+    ? `
+        <div class="hero-month-topline">
+          <small class="hero-month-kicker">Natural Month Focus</small>
+          <span class="hero-month-badge">${formatMonthLabel(currentMonth.endDate)}</span>
+        </div>
+        <div class="hero-month-metrics">
+          <div class="hero-month-primary">
+            <span class="hero-month-label">本月累计消耗</span>
+            <strong>${currencyFormatter(currency.primarySymbol, currentMonth.primaryCost || 0)}</strong>
+            <p>按自然月从 1 号累计到当前查看日。</p>
+          </div>
+          <div class="hero-month-side">
+            <div class="hero-month-stat">
+              <span>累计请求</span>
+              <strong>${numberFormatter(currentMonth.requests)}</strong>
+            </div>
+            <div class="hero-month-stat">
+              <span>统计区间</span>
+              <strong>${formatMonthDayLabel(currentMonth.startDate)} - ${formatMonthDayLabel(currentMonth.endDate)}</strong>
+            </div>
+          </div>
+        </div>
+      `
+    : `
+        <div class="hero-month-empty">
+          <small class="hero-month-kicker">Natural Month Focus</small>
+          <strong>等待月度数据</strong>
+          <p>同步到首个有效请求后，这里会显示自然月累计消耗。</p>
+        </div>
+      `
+}
+
 function renderSceneReadout(payload, selectedDay, days) {
   const peakDay = pickPeakDay(days)
   const topPerson = selectedDay?.people?.[0]
@@ -338,20 +380,8 @@ function renderSignalDeck(payload, selectedDay, days) {
 function renderSummaryCards(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const topPerson = selectedDay?.people?.[0]
-  const currentMonth = monthSnapshot(days, selectedDay?.date || payload.summary.latestDate || days.at(-1)?.date)
 
   const cards = [
-    {
-      label: "本月累计消耗",
-      value: currencyFormatter(currency.primarySymbol, currentMonth.primaryCost || 0),
-      caption: currentMonth.endDate
-        ? `${formatMonthLabel(currentMonth.endDate)} 1 日至 ${formatMonthDayLabel(currentMonth.endDate)} · ${numberFormatter(
-            currentMonth.requests,
-          )} 次请求`
-        : "按自然月累计更新",
-      flag: "Natural Month",
-      className: "stat-card--featured",
-    },
     {
       label: "当前日期总消耗",
       value: currencyFormatter(currency.primarySymbol, selectedDay?.primaryCost || 0),
@@ -381,11 +411,8 @@ function renderSummaryCards(payload, selectedDay, days) {
   qs("#summary-grid").innerHTML = cards
     .map(
       (card, index) => `
-        <article class="stat-card ${card.className || ""} interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
-          <div class="stat-card__topline">
-            <small>${card.label}</small>
-            ${card.flag ? `<span class="stat-card__flag">${card.flag}</span>` : ""}
-          </div>
+        <article class="stat-card interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
+          <small>${card.label}</small>
           <strong class="stat-card__value">${card.value}</strong>
           <span class="stat-card__note">${card.caption}</span>
         </article>
@@ -2286,14 +2313,14 @@ function renderDashboard() {
   qs("#sync-status").textContent = selectedDay ? "Telemetry Live" : "Standby"
 
   if (selectedDay) {
-    const currentMonth = monthSnapshot(days, selectedDay.date)
-    qs("#selected-date-meta").textContent =
-      `${selectedDay.date} · 共 ${numberFormatter(selectedDay.people.length)} 位成员有消费记录 · ` +
-      `${formatMonthLabel(selectedDay.date)}自然月累计 ${currencyFormatter("¥", currentMonth.primaryCost)}`
+    qs("#selected-date-meta").textContent = `${selectedDay.date} · 共 ${numberFormatter(
+      selectedDay.people.length,
+    )} 位成员有消费记录`
   } else {
     qs("#selected-date-meta").textContent = "暂无可用日期"
   }
 
+  renderHeroMonthFocus(payload, selectedDay, days)
   renderHeroMarquee(payload, selectedDay, days)
   renderSceneReadout(payload, selectedDay, days)
   renderSignalDeck(payload, selectedDay, days)
