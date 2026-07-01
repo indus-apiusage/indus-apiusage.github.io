@@ -342,6 +342,17 @@ function renderSummaryCards(payload, selectedDay, days) {
 
   const cards = [
     {
+      label: "本月累计消耗",
+      value: currencyFormatter(currency.primarySymbol, currentMonth.primaryCost || 0),
+      caption: currentMonth.endDate
+        ? `${formatMonthLabel(currentMonth.endDate)} 1 日至 ${formatMonthDayLabel(currentMonth.endDate)} · ${numberFormatter(
+            currentMonth.requests,
+          )} 次请求`
+        : "按自然月累计更新",
+      flag: "Natural Month",
+      className: "stat-card--featured",
+    },
+    {
       label: "当前日期总消耗",
       value: currencyFormatter(currency.primarySymbol, selectedDay?.primaryCost || 0),
       caption: "按人民币直接展示",
@@ -352,15 +363,6 @@ function renderSummaryCards(payload, selectedDay, days) {
       caption: `输入 ${numberFormatter(selectedDay?.promptTokens || 0)} / 输出 ${numberFormatter(
         selectedDay?.completionTokens || 0,
       )}`,
-    },
-    {
-      label: "本月累计消耗",
-      value: currencyFormatter(currency.primarySymbol, currentMonth.primaryCost || 0),
-      caption: currentMonth.endDate
-        ? `${formatMonthLabel(currentMonth.endDate)} 1 日至 ${formatMonthDayLabel(currentMonth.endDate)} · ${numberFormatter(
-            currentMonth.requests,
-          )} 次请求`
-        : "按自然月累计更新",
     },
     {
       label: "活跃成员数",
@@ -379,10 +381,13 @@ function renderSummaryCards(payload, selectedDay, days) {
   qs("#summary-grid").innerHTML = cards
     .map(
       (card, index) => `
-        <article class="stat-card interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
-          <small>${card.label}</small>
-          <strong>${card.value}</strong>
-          <span>${card.caption}</span>
+        <article class="stat-card ${card.className || ""} interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
+          <div class="stat-card__topline">
+            <small>${card.label}</small>
+            ${card.flag ? `<span class="stat-card__flag">${card.flag}</span>` : ""}
+          </div>
+          <strong class="stat-card__value">${card.value}</strong>
+          <span class="stat-card__note">${card.caption}</span>
         </article>
       `,
     )
@@ -397,16 +402,19 @@ function renderSelectedDayCards(payload, selectedDay) {
       label: "平台额度原值",
       value: numberFormatter(selectedDay?.rawQuota || 0),
       caption: `1 ${currency.primaryCode} = ${numberFormatter(currency.quotaPerUnit)} quota`,
+      valueType: "numeric",
     },
     {
       label: "缓存读取 Tokens",
       value: numberFormatter(selectedDay?.cacheReadTokens || 0),
       caption: "来自日志 other.cache_tokens",
+      valueType: "numeric",
     },
     {
       label: "缓存写入 Tokens",
       value: numberFormatter(selectedDay?.cacheWriteTokens || 0),
       caption: "聚合 cache_creation_tokens 系列字段",
+      valueType: "numeric",
     },
     {
       label: "Top Models",
@@ -418,15 +426,25 @@ function renderSelectedDayCards(payload, selectedDay) {
   ]
 
   qs("#selected-day-cards").innerHTML = cards
-    .map(
-      (card, index) => `
+    .map((card, index) => {
+      const valueLength = String(card.value || "").length
+      const sizeClass =
+        card.valueType === "numeric"
+          ? valueLength >= 11
+            ? "stat-card__value--dense"
+            : valueLength >= 9
+              ? "stat-card__value--compact"
+              : ""
+          : ""
+
+      return `
         <article class="stat-card interactive-card reveal-card" style="--delay: ${220 + index * 60}ms">
           <small>${card.label}</small>
-          <strong>${card.value}</strong>
-          <span>${card.caption}</span>
+          <strong class="stat-card__value ${sizeClass}">${card.value}</strong>
+          <span class="stat-card__note">${card.caption}</span>
         </article>
-      `,
-    )
+      `
+    })
     .join("")
 }
 
