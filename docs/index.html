@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ForOpenCode Usage Dashboard</title>
+    <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">GitHub Pages Dashboard</p>
+          <h1>ForOpenCode Usage Dashboard</h1>
+          <p class="hero-text">
+            按 API Key 名称聚合每天的调用量、额度消耗和模型分布，适合直接放到
+            GitHub Project Page 做团队可视化。
+          </p>
+        </div>
+        <div class="hero-meta panel">
+          <div class="meta-row">
+            <span>数据时间</span>
+            <strong id="generated-at">载入中</strong>
+          </div>
+          <div class="meta-row">
+            <span>时区</span>
+            <strong id="timezone">-</strong>
+          </div>
+          <div class="meta-row">
+            <span>范围</span>
+            <strong id="scope">-</strong>
+          </div>
+          <div class="meta-row">
+            <span>来源</span>
+            <strong id="base-url">-</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="summary-grid" id="summary-grid"></section>
+
+      <section class="controls panel">
+        <div class="control">
+          <label for="date-select">查看日期</label>
+          <select id="date-select"></select>
+        </div>
+        <div class="control">
+          <label for="person-filter">筛选成员 / Key</label>
+          <input
+            id="person-filter"
+            type="search"
+            placeholder="输入成员名、token 名称或模型关键字"
+          />
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel chart-panel">
+          <div class="section-heading">
+            <h2>近期开销趋势</h2>
+            <p>最近抓取周期内每天的总消耗。</p>
+          </div>
+          <div id="cost-trend" class="chart-host"></div>
+        </article>
+
+        <article class="panel chart-panel">
+          <div class="section-heading">
+            <h2>当日成员排行</h2>
+            <p>按所选日期统计的消耗排行。</p>
+          </div>
+          <div id="people-ranking" class="chart-host"></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>当日汇总</h2>
+          <p id="selected-date-meta">-</p>
+        </div>
+        <div id="selected-day-cards" class="mini-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>成员明细</h2>
+          <p>以 API Key 名称作为归属依据，可配合 `config/people.json` 做成员映射。</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>成员</th>
+                <th>Key 名称</th>
+                <th>请求数</th>
+                <th>消耗</th>
+                <th>输入 Tokens</th>
+                <th>输出 Tokens</th>
+                <th>缓存</th>
+                <th>Top Models</th>
+              </tr>
+            </thead>
+            <tbody id="people-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="warning-panel" hidden>
+        <div class="section-heading">
+          <h2>提醒</h2>
+          <p>以下内容不会影响同步，但建议后续整理。</p>
+        </div>
+        <ul id="warning-list" class="warning-list"></ul>
+      </section>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
