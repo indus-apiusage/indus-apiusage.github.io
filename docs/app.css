@@ -965,6 +965,16 @@ th,
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.mini-grid .stat-card strong {
+  font-size: clamp(1.28rem, 2.15vw, 1.92rem);
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+.mini-grid .stat-card span {
+  font-size: 0.8rem;
+}
+
 .controls {
   display: grid;
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
