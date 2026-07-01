@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Indus API Usage | 总览</title>
+    <title>Indus API Usage | 模型</title>
     <link rel="icon" href="data:," />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,7 +13,7 @@
     />
     <link rel="stylesheet" href="./app.css" />
   </head>
-  <body data-page="overview">
+  <body data-page="models">
     <canvas class="ambient-canvas" id="starfield-canvas" aria-hidden="true"></canvas>
     <div class="ambient ambient--grid"></div>
     <div class="ambient ambient--mesh"></div>
@@ -36,31 +36,30 @@
         </nav>
         <div class="nav-status">
           <span class="nav-dot"></span>
-          <span>Live Ledger</span>
+          <span>Model Lab</span>
         </div>
       </header>
 
       <header class="hero">
         <div class="hero-copy interactive-card reveal-card" style="--delay: 40ms">
           <div class="hero-kicker-row">
-            <p class="eyebrow">Overview Deck</p>
+            <p class="eyebrow">Model Lab</p>
             <div class="status-pill">
               <span class="status-dot"></span>
               <span id="sync-status">Telemetry Live</span>
             </div>
           </div>
-          <h1>Indus API Usage Observatory</h1>
+          <h1>Model Performance Lab</h1>
           <p class="hero-text">
-            首页聚焦当天视图、全周期峰值和 3D 监控场景。你可以把这里当作总控台，再从上方跳转到成员、
-            模型和时间线页面，查看更细颗粒度的数据结构。
+            这里按模型维度梳理整体消耗构成、主力模型趋势和所选日期的即时分布，适合观察不同模型在团队中的真实使用占比。
           </p>
-          <div class="hero-marquee" id="hero-marquee"></div>
+          <div class="hero-marquee" id="models-hero-marquee"></div>
         </div>
 
         <div class="hero-side">
           <div class="hero-meta panel interactive-card reveal-card" style="--delay: 120ms">
             <div class="meta-topline">
-              <span>Signal Ledger</span>
+              <span>Model Ledger</span>
               <strong id="latest-date">-</strong>
             </div>
             <div class="meta-row">
@@ -81,29 +80,15 @@
             </div>
           </div>
 
-          <section class="hero-scene panel interactive-card reveal-card" style="--delay: 180ms">
-            <div class="scene-topline">
-              <span>Motion Core</span>
-              <strong>Orbit Chamber</strong>
+          <section class="panel interactive-card reveal-card" style="--delay: 180ms">
+            <div class="section-heading">
+              <h2>模型速览</h2>
+              <p id="selected-model-meta">载入中</p>
             </div>
-            <div class="orbital-stage" id="orbital-stage" aria-hidden="true">
-              <canvas class="webgl-canvas" id="webgl-canvas"></canvas>
-              <div class="webgl-gradient webgl-gradient--a"></div>
-              <div class="webgl-gradient webgl-gradient--b"></div>
-              <div class="webgl-grid-overlay"></div>
-              <div class="webgl-scanline"></div>
-              <div class="webgl-crosshair"></div>
-              <div class="webgl-hud webgl-hud--top-left">Sector A-13</div>
-              <div class="webgl-hud webgl-hud--top-right">Phase Drive</div>
-              <div class="webgl-hud webgl-hud--bottom-left">Live Orbit Mesh</div>
-              <div class="webgl-hud webgl-hud--bottom-right">Three.js Chamber</div>
-            </div>
-            <div class="scene-readout" id="scene-readout"></div>
+            <div id="models-side-panel" class="insight-stack"></div>
           </section>
         </div>
       </header>
-
-      <section class="signal-deck" id="signal-deck"></section>
 
       <section class="controls panel interactive-card reveal-card" style="--delay: 220ms">
         <div class="control">
@@ -112,65 +97,66 @@
           <p class="control-note" id="date-range-hint">-</p>
         </div>
         <div class="control">
-          <label for="person-filter">筛选成员 / Key</label>
-          <input
-            id="person-filter"
-            type="search"
-            placeholder="输入成员名、token 名称或模型关键字"
-          />
+          <label for="person-filter">筛选模型</label>
+          <input id="person-filter" type="search" placeholder="输入模型名称关键字" />
         </div>
       </section>
 
-      <section class="summary-grid" id="summary-grid"></section>
+      <section class="panel interactive-card reveal-card" style="--delay: 240ms">
+        <div class="section-heading">
+          <h2>模型总览</h2>
+          <p>全周期模型累计消耗、请求量和峰值趋势。</p>
+        </div>
+        <div id="model-grid" class="catalog-grid"></div>
+      </section>
 
       <section class="content-grid">
-        <article class="panel chart-panel interactive-card reveal-card" style="--delay: 260ms">
+        <article class="panel chart-panel interactive-card reveal-card" style="--delay: 280ms">
           <div class="section-heading">
-            <h2>近期开销趋势</h2>
-            <p>从首个有请求的日期开始，展示每天人民币消耗。</p>
+            <h2>模型趋势曲线</h2>
+            <p>展示头部模型在最近周期内的日级消耗走向。</p>
           </div>
-          <div id="cost-trend" class="chart-host"></div>
+          <div id="model-trend-chart" class="chart-host"></div>
         </article>
 
-        <article class="panel chart-panel interactive-card reveal-card" style="--delay: 320ms">
+        <article class="panel interactive-card reveal-card" style="--delay: 320ms">
           <div class="section-heading">
-            <h2>当日成员排行</h2>
-            <p>按所选日期统计的成员消耗排行。</p>
+            <h2>所选日期模型分布</h2>
+            <p>当前日期下各模型的消费分布。</p>
           </div>
-          <div id="people-ranking" class="chart-host"></div>
+          <div id="model-day-board" class="stack-list"></div>
         </article>
       </section>
 
-      <section class="panel interactive-card reveal-card" style="--delay: 280ms">
+      <section class="panel interactive-card reveal-card" style="--delay: 360ms">
         <div class="section-heading">
-          <h2>当日汇总</h2>
-          <p id="selected-date-meta">-</p>
-        </div>
-        <div id="selected-day-cards" class="mini-grid"></div>
-      </section>
-
-      <section class="panel interactive-card reveal-card" style="--delay: 340ms">
-        <div class="section-heading">
-          <h2>成员明细</h2>
-          <p>按 API Key 名称归属展示所选日期明细。</p>
+          <h2>模型总表</h2>
+          <p>以全周期累计结果查看每个模型的总消耗、请求数与峰值日。</p>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>成员</th>
-                <th>Key 名称</th>
+                <th>模型</th>
                 <th>请求数</th>
                 <th>消耗</th>
                 <th>输入 Tokens</th>
                 <th>输出 Tokens</th>
-                <th>缓存</th>
-                <th>Top Models</th>
+                <th>峰值日</th>
+                <th>峰值金额</th>
               </tr>
             </thead>
-            <tbody id="people-table-body"></tbody>
+            <tbody id="model-table-body"></tbody>
           </table>
         </div>
+      </section>
+
+      <section class="panel interactive-card reveal-card" style="--delay: 400ms">
+        <div class="section-heading">
+          <h2>每日主导模型</h2>
+          <p>按日期查看当天消耗最高的模型。</p>
+        </div>
+        <div id="model-daily-log" class="timeline-grid"></div>
       </section>
 
       <section class="panel interactive-card reveal-card" id="warning-panel" hidden>
