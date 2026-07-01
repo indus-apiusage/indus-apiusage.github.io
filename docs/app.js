@@ -335,9 +335,10 @@ function renderSignalDeck(payload, selectedDay, days) {
     .join("")
 }
 
-function renderSummaryCards(payload, selectedDay) {
+function renderSummaryCards(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const topPerson = selectedDay?.people?.[0]
+  const currentMonth = monthSnapshot(days, selectedDay?.date || payload.summary.latestDate || days.at(-1)?.date)
 
   const cards = [
     {
@@ -351,6 +352,15 @@ function renderSummaryCards(payload, selectedDay) {
       caption: `输入 ${numberFormatter(selectedDay?.promptTokens || 0)} / 输出 ${numberFormatter(
         selectedDay?.completionTokens || 0,
       )}`,
+    },
+    {
+      label: "本月累计消耗",
+      value: currencyFormatter(currency.primarySymbol, currentMonth.primaryCost || 0),
+      caption: currentMonth.endDate
+        ? `${formatMonthLabel(currentMonth.endDate)} 1 日至 ${formatMonthDayLabel(currentMonth.endDate)} · ${numberFormatter(
+            currentMonth.requests,
+          )} 次请求`
+        : "按自然月累计更新",
     },
     {
       label: "活跃成员数",
@@ -535,6 +545,53 @@ function formatLongDay(value) {
     day: "numeric",
     weekday: "short",
   })
+}
+
+function formatMonthLabel(value) {
+  if (!value) {
+    return "-"
+  }
+
+  return new Date(`${value.slice(0, 7)}-01T00:00:00`).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+  })
+}
+
+function formatMonthDayLabel(value) {
+  if (!value) {
+    return "-"
+  }
+
+  return new Date(`${value}T00:00:00`).toLocaleDateString("zh-CN", {
+    month: "long",
+    day: "numeric",
+  })
+}
+
+function monthSnapshot(days, anchorDate) {
+  if (!anchorDate) {
+    return {
+      monthKey: "",
+      startDate: null,
+      endDate: null,
+      days: [],
+      primaryCost: 0,
+      requests: 0,
+    }
+  }
+
+  const monthKey = anchorDate.slice(0, 7)
+  const monthDays = days.filter((day) => day.date.startsWith(monthKey) && day.date <= anchorDate)
+
+  return {
+    monthKey,
+    startDate: monthDays[0]?.date || `${monthKey}-01`,
+    endDate: anchorDate,
+    days: monthDays,
+    primaryCost: monthDays.reduce((sum, day) => sum + Number(day.primaryCost || 0), 0),
+    requests: monthDays.reduce((sum, day) => sum + Number(day.requests || 0), 0),
+  }
 }
 
 function matchFilter(filterText, targets) {
@@ -2209,14 +2266,20 @@ function renderDashboard() {
   qs("#base-url").textContent = payload.source.baseUrl
   qs("#latest-date").textContent = payload.summary.latestDate || "No feed"
   qs("#sync-status").textContent = selectedDay ? "Telemetry Live" : "Standby"
-  qs("#selected-date-meta").textContent = selectedDay
-    ? `${selectedDay.date} · 共 ${numberFormatter(selectedDay.people.length)} 位成员有消费记录`
-    : "暂无可用日期"
+
+  if (selectedDay) {
+    const currentMonth = monthSnapshot(days, selectedDay.date)
+    qs("#selected-date-meta").textContent =
+      `${selectedDay.date} · 共 ${numberFormatter(selectedDay.people.length)} 位成员有消费记录 · ` +
+      `${formatMonthLabel(selectedDay.date)}自然月累计 ${currencyFormatter("¥", currentMonth.primaryCost)}`
+  } else {
+    qs("#selected-date-meta").textContent = "暂无可用日期"
+  }
 
   renderHeroMarquee(payload, selectedDay, days)
   renderSceneReadout(payload, selectedDay, days)
   renderSignalDeck(payload, selectedDay, days)
-  renderSummaryCards(payload, selectedDay)
+  renderSummaryCards(payload, selectedDay, days)
   renderSelectedDayCards(payload, selectedDay)
   renderPeopleTable(payload, selectedDay)
   renderWarnings(payload)

@@ -957,7 +957,7 @@ th,
 }
 
 .summary-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   margin-bottom: 22px;
 }
 
@@ -1624,7 +1624,6 @@ tbody tr:hover {
 
 @media (max-width: 1180px) {
   .signal-deck,
-  .summary-grid,
   .mini-grid,
   .catalog-grid,
   .timeline-grid {
