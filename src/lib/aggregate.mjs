@@ -13,26 +13,11 @@ import {
 
 function buildCurrencyStatus(status) {
   const quotaPerUnit = toNumber(status.quota_per_unit, 500000);
-  const quotaDisplayType = String(status.quota_display_type || "USD").toUpperCase();
+  const quotaDisplayType = "CNY";
   const usdExchangeRate = toNumber(status.usd_exchange_rate, 1);
   const customCurrencyExchangeRate = toNumber(status.custom_currency_exchange_rate, 1);
   const customCurrencySymbol = status.custom_currency_symbol || "¤";
-
-  const usdFromQuota = (quota) => toNumber(quota) / quotaPerUnit;
-
-  const primarySymbol =
-    quotaDisplayType === "CNY"
-      ? "¥"
-      : quotaDisplayType === "CUSTOM"
-        ? customCurrencySymbol
-        : "$";
-
-  const primaryCode =
-    quotaDisplayType === "CNY"
-      ? "CNY"
-      : quotaDisplayType === "CUSTOM"
-        ? "CUSTOM"
-        : "USD";
+  const cnyFromQuota = (quota) => toNumber(quota) / quotaPerUnit;
 
   return {
     displayInCurrency: Boolean(status.display_in_currency),
@@ -41,26 +26,18 @@ function buildCurrencyStatus(status) {
     usdExchangeRate,
     customCurrencySymbol,
     customCurrencyExchangeRate,
-    primaryCode,
-    primarySymbol,
-    secondaryCode: "CNY",
-    secondarySymbol: "¥",
-    quotaToUsd: usdFromQuota,
+    primaryCode: "CNY",
+    primarySymbol: "¥",
+    secondaryCode: null,
+    secondarySymbol: null,
+    quotaToUsd(quota) {
+      return cnyFromQuota(quota) / Math.max(usdExchangeRate, 1);
+    },
     quotaToPrimary(quota) {
-      const usd = usdFromQuota(quota);
-
-      if (quotaDisplayType === "CNY") {
-        return usd * usdExchangeRate;
-      }
-
-      if (quotaDisplayType === "CUSTOM") {
-        return usd * customCurrencyExchangeRate;
-      }
-
-      return usd;
+      return cnyFromQuota(quota);
     },
     quotaToSecondary(quota) {
-      return usdFromQuota(quota) * usdExchangeRate;
+      return 0;
     },
   };
 }
@@ -153,6 +130,11 @@ function finalizeModelMap(modelMap) {
     5,
     (entry) => entry.primaryCost,
   );
+}
+
+function trimLeadingEmptyDays(days) {
+  const firstActiveIndex = days.findIndex((day) => toNumber(day.requests) > 0);
+  return firstActiveIndex === -1 ? days : days.slice(firstActiveIndex);
 }
 
 export function buildDateRange(config) {
@@ -253,7 +235,8 @@ export function buildDashboardPayload({ dayResults, config, status }) {
   const peopleMap = new Map();
   const warnings = [];
 
-  const days = sortByDateAsc(
+  const days = trimLeadingEmptyDays(
+    sortByDateAsc(
     dayResults.map(({ date, logs }) => {
       const personMap = new Map();
       const modelMap = new Map();
@@ -370,6 +353,7 @@ export function buildDashboardPayload({ dayResults, config, status }) {
         models: finalizeModelMap(modelMap),
       };
     }),
+    ),
   );
 
   const people = [...peopleMap.values()]

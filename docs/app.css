@@ -91,7 +91,8 @@ h1 {
 .hero-text,
 .section-heading p,
 .meta-row span,
-.control label {
+.control label,
+.control-note {
   color: var(--muted);
 }
 
@@ -179,6 +180,7 @@ h1 {
 }
 
 select,
+input[type="date"],
 input[type="search"] {
   width: 100%;
   border-radius: 14px;
@@ -187,6 +189,12 @@ input[type="search"] {
   padding: 12px 14px;
   font: inherit;
   color: var(--text);
+}
+
+.control-note {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 
 .content-grid {

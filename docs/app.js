@@ -8,6 +8,16 @@ function qs(selector) {
   return document.querySelector(selector);
 }
 
+function normalizeCurrency(currency) {
+  return {
+    ...currency,
+    primaryCode: "CNY",
+    primarySymbol: "¥",
+    secondaryCode: null,
+    secondarySymbol: null,
+  };
+}
+
 function currencyFormatter(symbol, value) {
   return `${symbol}${Number(value || 0).toFixed(4)}`;
 }
@@ -28,6 +38,17 @@ function dateTimeFormatter(value) {
 
 function emptyChart(message) {
   return `<div class="chart-empty">${message}</div>`;
+}
+
+function displayDays(payload) {
+  const days = Array.isArray(payload?.days) ? payload.days : [];
+  const firstActiveIndex = days.findIndex((day) => Number(day.requests || 0) > 0);
+
+  if (firstActiveIndex === -1) {
+    return days;
+  }
+
+  return days.slice(firstActiveIndex);
 }
 
 function createLineChart(days) {
@@ -138,14 +159,14 @@ function createBarChart(rows, currency) {
 }
 
 function renderSummaryCards(payload, selectedDay) {
-  const currency = payload.currency;
+  const currency = normalizeCurrency(payload.currency);
   const topPerson = selectedDay?.people?.[0];
 
   const cards = [
     {
       label: "当前日期总消耗",
       value: currencyFormatter(currency.primarySymbol, selectedDay?.primaryCost || 0),
-      caption: `约 ${currencyFormatter(currency.secondarySymbol, selectedDay?.secondaryCost || 0)}`,
+      caption: "按人民币直接展示",
     },
     {
       label: "当前日期请求数",
@@ -182,7 +203,7 @@ function renderSummaryCards(payload, selectedDay) {
 }
 
 function renderSelectedDayCards(payload, selectedDay) {
-  const currency = payload.currency;
+  const currency = normalizeCurrency(payload.currency);
 
   const cards = [
     {
@@ -224,7 +245,7 @@ function renderSelectedDayCards(payload, selectedDay) {
 
 function renderPeopleTable(payload, selectedDay) {
   const filterText = state.filterText.trim().toLowerCase();
-  const currency = payload.currency;
+  const currency = normalizeCurrency(payload.currency);
   const rows = (selectedDay?.people || []).filter((row) => {
     if (!filterText) {
       return true;
@@ -257,7 +278,6 @@ function renderPeopleTable(payload, selectedDay) {
               <td>${numberFormatter(row.requests)}</td>
               <td>
                 <strong>${currencyFormatter(currency.primarySymbol, row.primaryCost)}</strong>
-                <div class="muted">${currencyFormatter(currency.secondarySymbol, row.secondaryCost)}</div>
               </td>
               <td>${numberFormatter(row.promptTokens)}</td>
               <td>${numberFormatter(row.completionTokens)}</td>
@@ -301,22 +321,44 @@ function renderWarnings(payload) {
 }
 
 function updateDateOptions(payload) {
-  const select = qs("#date-select");
-  select.innerHTML = payload.days
-    .map((day) => `<option value="${day.date}">${day.date}</option>`)
-    .join("");
+  const dateInput = qs("#date-select");
+  const hint = qs("#date-range-hint");
+  const days = displayDays(payload);
+  const earliestDate = days[0]?.date || "";
+  const latestDate = payload.summary.latestDate || days.at(-1)?.date || "";
 
-  state.selectedDate = payload.summary.latestDate || payload.days.at(-1)?.date || null;
-  select.value = state.selectedDate;
+  dateInput.min = earliestDate;
+  dateInput.max = latestDate;
+  state.selectedDate = latestDate || null;
+  dateInput.value = state.selectedDate || "";
+  hint.textContent =
+    earliestDate && latestDate ? `可选范围 ${earliestDate} 至 ${latestDate}` : "暂无可用日期范围";
 }
 
 function currentDay(payload) {
-  return payload.days.find((day) => day.date === state.selectedDate) || payload.days.at(-1) || null;
+  const days = displayDays(payload);
+  return days.find((day) => day.date === state.selectedDate) || days.at(-1) || null;
 }
 
 function renderDashboard() {
   const payload = state.payload;
+  const currency = normalizeCurrency(payload.currency);
+  const days = displayDays(payload);
   const selectedDay = currentDay(payload);
+  const dateInput = qs("#date-select");
+  const hint = qs("#date-range-hint");
+
+  if (state.selectedDate && !days.some((day) => day.date === state.selectedDate)) {
+    state.selectedDate = payload.summary.latestDate || days.at(-1)?.date || null;
+  }
+
+  dateInput.min = days[0]?.date || "";
+  dateInput.max = payload.summary.latestDate || days.at(-1)?.date || "";
+  dateInput.value = state.selectedDate || "";
+  hint.textContent =
+    days.length > 0
+      ? `已从首个有请求的日期开始展示，共 ${numberFormatter(days.length)} 天`
+      : "暂无可展示的有效日期";
 
   qs("#generated-at").textContent = dateTimeFormatter(payload.generatedAt);
   qs("#timezone").textContent = payload.source.timezone;
@@ -331,8 +373,8 @@ function renderDashboard() {
   renderPeopleTable(payload, selectedDay);
   renderWarnings(payload);
 
-  qs("#cost-trend").innerHTML = createLineChart(payload.days);
-  qs("#people-ranking").innerHTML = createBarChart(selectedDay?.people || [], payload.currency);
+  qs("#cost-trend").innerHTML = createLineChart(days);
+  qs("#people-ranking").innerHTML = createBarChart(selectedDay?.people || [], currency);
 }
 
 async function loadPayload() {
