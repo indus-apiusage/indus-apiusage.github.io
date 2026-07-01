@@ -3,10 +3,14 @@ name: Sync Usage Data
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 * * * *"
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
+
+concurrency:
+  group: "sync-usage-data"
+  cancel-in-progress: true
 
 jobs:
   sync:
@@ -19,17 +23,18 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Run tests
+        if: github.event_name == 'workflow_dispatch'
         run: npm test
 
-      - name: Sync usage data
-        run: npm run sync
+      - name: Sync usage data and push changes
+        run: npm run sync:publish
         env:
           FOROPENCODE_BASE_URL: ${{ vars.FOROPENCODE_BASE_URL }}
           FOROPENCODE_SCOPE: ${{ vars.FOROPENCODE_SCOPE }}
@@ -42,16 +47,3 @@ jobs:
           USAGE_LOOKBACK_DAYS: ${{ vars.USAGE_LOOKBACK_DAYS }}
           USAGE_START_DATE: ${{ vars.USAGE_START_DATE }}
           USAGE_END_DATE: ${{ vars.USAGE_END_DATE }}
-
-      - name: Commit updated dashboard data
-        run: |
-          if git diff --quiet -- docs/data/latest.json; then
-            echo "No dashboard data changes detected."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/data/latest.json
-          git commit -m "chore: refresh usage dashboard data"
-          git push

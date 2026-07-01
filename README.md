@@ -11,6 +11,7 @@ ForOpenCode Usage Dashboard
 ## 项目结构
 
 - `scripts/sync-usage-data.mjs`: 主同步入口。
+- `scripts/sync-and-push.sh`: 同步后按需提交并推送到 GitHub。
 - `src/lib/for-api-client.mjs`: 认证、分页抓取、接口请求。
 - `src/lib/aggregate.mjs`: 日级聚合、成员映射、额度换算。
 - `config/people.example.json`: 成员映射配置示例。
@@ -123,6 +124,12 @@ export FOROPENCODE_TURNSTILE_TOKEN='...'
 npm run sync
 ```
 
+如果你希望抓取完成后自动提交并推送当前变更：
+
+```bash
+npm run sync:publish
+```
+
 同步结果会写到：
 
 - `docs/data/latest.json`
@@ -164,7 +171,7 @@ npm test
 仓库已经带了两个工作流：
 
 - `Sync Usage Data`
-  每小时自动拉一次最新数据，更新 `docs/data/latest.json`
+  每 5 分钟自动拉一次最新数据，更新 `docs/data/latest.json`，并在有变化时自动提交回仓库
 - `Deploy GitHub Pages`
   当 `docs/` 有变更时自动发布 Pages
 
@@ -197,6 +204,16 @@ npm test
    配置 `FOROPENCODE_COOKIE` 与 `FOROPENCODE_USER_ID`
 2. `Settings -> Pages`
    Source 选择 `GitHub Actions`
+
+## 定时说明
+
+现在仓库里的 `Sync Usage Data` workflow 已经改成：
+
+- 每 5 分钟运行一次
+- 自动执行爬虫
+- 如果 `docs/data/latest.json` 有变化，就自动 commit 并 push
+
+需要注意的是，GitHub Actions 的 cron 是尽力调度，不保证精确到秒；高峰期偶尔会比 5 分钟稍晚一点触发。
 
 ## 注意事项
 

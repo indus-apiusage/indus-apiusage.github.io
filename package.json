@@ -9,6 +9,7 @@
   },
   "scripts": {
     "sync": "node ./scripts/sync-usage-data.mjs",
+    "sync:publish": "bash ./scripts/sync-and-push.sh",
     "sync:placeholder": "node ./scripts/sync-usage-data.mjs --placeholder",
     "test": "node --test"
   },
