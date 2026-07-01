@@ -330,6 +330,61 @@ function renderSceneReadout(payload, selectedDay, days) {
     .join("")
 }
 
+function renderReminderBoard() {
+  const container = qs("#scene-readout")
+
+  if (!container) {
+    return
+  }
+
+  container.innerHTML = [
+    {
+      label: "AAAI 2027",
+      valueHtml: `
+        <div class="scene-chip__deadline-list">
+          <div class="scene-chip__deadline-row">
+            <span>摘要截止</span>
+            <strong>7月21日</strong>
+          </div>
+          <div class="scene-chip__deadline-row">
+            <span>正式截止</span>
+            <strong>7月28日 19:59</strong>
+          </div>
+        </div>
+      `,
+      note: "Montreal · 2027-02-16 至 02-23",
+      tone: "scene-chip--hot",
+      featured: true,
+    },
+    {
+      empty: true,
+    },
+    {
+      empty: true,
+    },
+  ]
+    .map(
+      (item, index) => `
+        <article class="scene-chip scene-chip--horizontal ${item.featured ? "scene-chip--featured" : ""} ${item.empty ? "scene-chip--empty" : ""} ${item.tone || ""} reveal-card" style="--delay: ${160 + index * 70}ms">
+          ${
+            item.empty
+              ? `
+                <div class="scene-chip__empty-line" aria-hidden="true"></div>
+              `
+              : `
+          <div class="scene-chip__content">
+            <small>${item.label}</small>
+            ${item.valueHtml || `<strong>${item.value}</strong>`}
+            <span>${item.note}</span>
+          </div>
+              `
+          }
+        </article>
+      `,
+    )
+    .join("")
+}
+
 function renderSignalDeck(payload, selectedDay, days) {
   const topPerson = selectedDay?.people?.[0]
   const peakDay = pickPeakDay(days)
@@ -2322,7 +2377,7 @@ function renderDashboard() {
 
   renderHeroMonthFocus(payload, selectedDay, days)
   renderHeroMarquee(payload, selectedDay, days)
-  renderSceneReadout(payload, selectedDay, days)
+  renderReminderBoard()
   renderSignalDeck(payload, selectedDay, days)
   renderSummaryCards(payload, selectedDay, days)
   renderSelectedDayCards(payload, selectedDay)

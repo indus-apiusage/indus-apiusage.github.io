@@ -82,24 +82,21 @@
             </div>
           </div>
 
-          <section class="hero-scene panel interactive-card reveal-card" style="--delay: 180ms">
+          <section class="hero-scene hero-reminders panel interactive-card reveal-card" style="--delay: 180ms">
             <div class="scene-topline">
-              <span>Motion Core</span>
-              <strong>Orbit Chamber</strong>
+              <span>Reminder Board</span>
+              <strong>Recent Priorities</strong>
             </div>
-            <div class="orbital-stage" id="orbital-stage" aria-hidden="true">
-              <canvas class="webgl-canvas" id="webgl-canvas"></canvas>
-              <div class="webgl-gradient webgl-gradient--a"></div>
-              <div class="webgl-gradient webgl-gradient--b"></div>
-              <div class="webgl-grid-overlay"></div>
-              <div class="webgl-scanline"></div>
-              <div class="webgl-crosshair"></div>
-              <div class="webgl-hud webgl-hud--top-left">Sector A-13</div>
-              <div class="webgl-hud webgl-hud--top-right">Phase Drive</div>
-              <div class="webgl-hud webgl-hud--bottom-left">Live Orbit Mesh</div>
-              <div class="webgl-hud webgl-hud--bottom-right">Three.js Chamber</div>
+            <div class="reminder-board">
+              <div class="reminder-board__header">
+                <div>
+                  <p class="reminder-board__eyebrow">近期提醒</p>
+                  <strong class="reminder-board__title">每日一观</strong>
+                </div>
+                <span class="reminder-board__badge">Editable in app.js</span>
+              </div>
+              <div class="scene-readout reminder-list" id="scene-readout"></div>
             </div>
-            <div class="scene-readout" id="scene-readout"></div>
           </section>
         </div>
       </header>

@@ -675,6 +675,11 @@ th,
   overflow: hidden;
 }
 
+.page-shell > section.panel + section.panel,
+.page-shell > section.panel + section.content-grid {
+  margin-top: 22px;
+}
+
 .hero-meta {
   background:
     radial-gradient(circle at top right, rgba(var(--blue-rgb), 0.14), transparent 30%),
@@ -719,6 +724,90 @@ th,
 .hero-scene {
   padding: 18px;
   min-height: 352px;
+}
+
+.hero-reminders {
+  background:
+    radial-gradient(circle at top right, rgba(var(--pink-rgb), 0.12), transparent 30%),
+    radial-gradient(circle at 18% 82%, rgba(var(--blue-rgb), 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(var(--blue-rgb), 0.04), transparent 26%),
+    linear-gradient(135deg, rgba(12, 17, 27, 0.96), rgba(8, 11, 18, 0.92));
+}
+
+.reminder-board {
+  position: relative;
+  min-height: 236px;
+  padding: 20px;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--blue-rgb), 0.12);
+  background:
+    radial-gradient(circle at 82% 20%, rgba(var(--pink-rgb), 0.16), transparent 24%),
+    radial-gradient(circle at 16% 82%, rgba(var(--blue-rgb), 0.15), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%),
+    rgba(7, 11, 18, 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 18px 38px rgba(0, 0, 0, 0.24);
+}
+
+.reminder-board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(var(--blue-rgb), 0.05), transparent 36%),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
+  pointer-events: none;
+}
+
+.reminder-board__header,
+.reminder-list {
+  position: relative;
+  z-index: 1;
+}
+
+.reminder-board__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.reminder-board__eyebrow {
+  margin: 0 0 8px;
+  color: var(--cyan);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.reminder-board__title {
+  display: block;
+  max-width: 16ch;
+  color: var(--text);
+  font-size: 1.22rem;
+  line-height: 1.3;
+}
+
+.reminder-board__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--blue-rgb), 0.18);
+  background: rgba(var(--blue-rgb), 0.08);
+  color: var(--text-soft);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.reminder-list {
+  margin-top: 14px;
 }
 
 .scene-topline {
@@ -996,13 +1085,99 @@ th,
 }
 
 .scene-readout {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .scene-chip {
   padding: 14px 14px 16px;
   border-radius: 18px;
   overflow: hidden;
+}
+
+.scene-chip--horizontal {
+  display: block;
+  min-height: 0;
+  padding: 14px 16px;
+}
+
+.scene-chip__content {
+  min-width: 0;
+}
+
+.scene-chip--empty {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+}
+
+.scene-chip__empty-line {
+  width: 100%;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    rgba(var(--blue-rgb), 0.18),
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+}
+
+.scene-chip--featured {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.scene-chip--featured .scene-chip__content small {
+  font-size: 0.72rem;
+}
+
+.scene-chip--featured .scene-chip__content strong {
+  font-size: clamp(1.3rem, 2vw, 1.72rem);
+}
+
+.scene-chip--featured .scene-chip__content span {
+  font-size: 0.8rem;
+}
+
+.scene-chip__deadline-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.scene-chip__deadline-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.scene-chip__deadline-row span {
+  margin-top: 0;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.scene-chip__deadline-row strong {
+  margin-top: 0;
+  color: var(--text);
+  font-size: clamp(1.22rem, 1.95vw, 1.58rem);
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  text-shadow: 0 0 24px rgba(var(--blue-rgb), 0.1);
+}
+
+.scene-chip--featured .scene-chip__deadline-list {
+  gap: 10px;
+}
+
+.scene-chip--featured .scene-chip__deadline-row strong {
+  font-size: clamp(1.3rem, 2.1vw, 1.72rem);
 }
 
 .scene-chip::after {
@@ -1013,6 +1188,30 @@ th,
   height: 90px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(var(--blue-rgb), 0.18), transparent 64%);
+}
+
+.scene-chip--hot::after {
+  background: radial-gradient(circle, rgba(var(--pink-rgb), 0.24), transparent 64%);
+}
+
+.scene-chip--watch::after {
+  background: radial-gradient(circle, rgba(var(--blue-rgb), 0.24), transparent 64%);
+}
+
+.scene-chip--note::after {
+  background: radial-gradient(circle, rgba(var(--lilac-rgb), 0.24), transparent 64%);
+}
+
+.scene-chip--hot small {
+  color: var(--gold);
+}
+
+.scene-chip--watch small {
+  color: var(--cyan);
+}
+
+.scene-chip--note small {
+  color: var(--violet);
 }
 
 .scene-chip small {
@@ -1903,6 +2102,16 @@ tbody tr:hover {
   .hero-month-topline {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .reminder-board__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .scene-chip--horizontal {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
   h1 {
