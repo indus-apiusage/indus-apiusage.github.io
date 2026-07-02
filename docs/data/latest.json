@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T01:10:39.662Z",
+  "generatedAt": "2026-07-02T01:16:18.496Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -33,12 +33,12 @@
   },
   "summary": {
     "totalDays": 9,
-    "totalRequests": 5109,
-    "totalRawQuota": 18782218,
-    "totalPrimaryCost": 37.564436,
+    "totalRequests": 5112,
+    "totalRawQuota": 18785344,
+    "totalPrimaryCost": 37.570688,
     "totalSecondaryCost": 0,
-    "activePeople": 1,
-    "activeTokens": 2,
+    "activePeople": 2,
+    "activeTokens": 3,
     "latestDate": "2026-07-02"
   },
   "days": [
@@ -570,13 +570,13 @@
     },
     {
       "date": "2026-07-02",
-      "requests": 100,
-      "rawQuota": 182248,
-      "primaryCost": 0.364496,
+      "requests": 103,
+      "rawQuota": 185374,
+      "primaryCost": 0.370748,
       "secondaryCost": 0,
-      "promptTokens": 9226545,
-      "completionTokens": 27137,
-      "cacheReadTokens": 8812672,
+      "promptTokens": 9261343,
+      "completionTokens": 27727,
+      "cacheReadTokens": 8824192,
       "cacheWriteTokens": 0,
       "people": [
         {
@@ -604,17 +604,61 @@
               "completionTokens": 27137
             }
           ]
+        },
+        {
+          "personId": "zdy",
+          "displayName": "zdy",
+          "tokenNames": [
+            "zdy"
+          ],
+          "requests": 3,
+          "rawQuota": 3126,
+          "primaryCost": 0.006252,
+          "secondaryCost": 0,
+          "promptTokens": 34798,
+          "completionTokens": 590,
+          "cacheReadTokens": 11520,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-5.4",
+              "requests": 2,
+              "rawQuota": 2967,
+              "primaryCost": 0.005934,
+              "secondaryCost": 0,
+              "promptTokens": 27094,
+              "completionTokens": 477
+            },
+            {
+              "name": "gpt-5.4-mini",
+              "requests": 1,
+              "rawQuota": 159,
+              "primaryCost": 0.000318,
+              "secondaryCost": 0,
+              "promptTokens": 7704,
+              "completionTokens": 113
+            }
+          ]
         }
       ],
       "models": [
         {
           "name": "gpt-5.4",
-          "requests": 100,
-          "rawQuota": 182248,
-          "primaryCost": 0.364496,
+          "requests": 102,
+          "rawQuota": 185215,
+          "primaryCost": 0.37043,
           "secondaryCost": 0,
-          "promptTokens": 9226545,
-          "completionTokens": 27137
+          "promptTokens": 9253639,
+          "completionTokens": 27614
+        },
+        {
+          "name": "gpt-5.4-mini",
+          "requests": 1,
+          "rawQuota": 159,
+          "primaryCost": 0.000318,
+          "secondaryCost": 0,
+          "promptTokens": 7704,
+          "completionTokens": 113
         }
       ]
     }
@@ -892,6 +936,56 @@
               "secondaryCost": 0,
               "promptTokens": 9232686,
               "completionTokens": 48862
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "personId": "zdy",
+      "displayName": "zdy",
+      "tokenNames": [
+        "zdy"
+      ],
+      "totals": {
+        "requests": 3,
+        "rawQuota": 3126,
+        "primaryCost": 0.006252,
+        "secondaryCost": 0,
+        "promptTokens": 34798,
+        "completionTokens": 590,
+        "cacheReadTokens": 11520,
+        "cacheWriteTokens": 0
+      },
+      "days": [
+        {
+          "date": "2026-07-02",
+          "requests": 3,
+          "rawQuota": 3126,
+          "primaryCost": 0.006252,
+          "secondaryCost": 0,
+          "promptTokens": 34798,
+          "completionTokens": 590,
+          "cacheReadTokens": 11520,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-5.4",
+              "requests": 2,
+              "rawQuota": 2967,
+              "primaryCost": 0.005934,
+              "secondaryCost": 0,
+              "promptTokens": 27094,
+              "completionTokens": 477
+            },
+            {
+              "name": "gpt-5.4-mini",
+              "requests": 1,
+              "rawQuota": 159,
+              "primaryCost": 0.000318,
+              "secondaryCost": 0,
+              "promptTokens": 7704,
+              "completionTokens": 113
             }
           ]
         }
@@ -1196,7 +1290,45 @@
           "completionTokens": 27137
         }
       ]
+    },
+    {
+      "date": "2026-07-02",
+      "personId": "zdy",
+      "displayName": "zdy",
+      "tokenNames": [
+        "zdy"
+      ],
+      "requests": 3,
+      "rawQuota": 3126,
+      "primaryCost": 0.006252,
+      "secondaryCost": 0,
+      "promptTokens": 34798,
+      "completionTokens": 590,
+      "cacheReadTokens": 11520,
+      "cacheWriteTokens": 0,
+      "models": [
+        {
+          "name": "gpt-5.4",
+          "requests": 2,
+          "rawQuota": 2967,
+          "primaryCost": 0.005934,
+          "secondaryCost": 0,
+          "promptTokens": 27094,
+          "completionTokens": 477
+        },
+        {
+          "name": "gpt-5.4-mini",
+          "requests": 1,
+          "rawQuota": 159,
+          "primaryCost": 0.000318,
+          "secondaryCost": 0,
+          "promptTokens": 7704,
+          "completionTokens": 113
+        }
+      ]
     }
   ],
-  "warnings": []
+  "warnings": [
+    "Token \"zdy\" is not mapped in config/people.json and will be shown as-is."
+  ]
 }
