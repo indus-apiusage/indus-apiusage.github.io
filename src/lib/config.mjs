@@ -61,15 +61,37 @@ function resolveDate(value, timeZone) {
   return date.isValid ? date.toISODate() : null;
 }
 
+function resolvePersonId(entry, tokenNames, index) {
+  const explicitPersonId = slugify(entry.personId);
+  if (explicitPersonId !== "unknown") {
+    return explicitPersonId;
+  }
+
+  const displayNamePersonId = slugify(entry.displayName);
+  if (displayNamePersonId !== "unknown") {
+    return displayNamePersonId;
+  }
+
+  const tokenDerivedPersonId = slugify(tokenNames.join("-"));
+  if (tokenDerivedPersonId !== "unknown") {
+    return tokenDerivedPersonId;
+  }
+
+  return `person-${index + 1}`;
+}
+
 function normalizePeople(config) {
   const people = Array.isArray(config?.people) ? config.people : [];
   return people
     .filter((entry) => entry && entry.displayName && Array.isArray(entry.tokenNames))
-    .map((entry) => ({
-      personId: slugify(entry.personId || entry.displayName),
-      displayName: String(entry.displayName).trim(),
-      tokenNames: entry.tokenNames.map((tokenName) => String(tokenName).trim()).filter(Boolean),
-    }))
+    .map((entry, index) => {
+      const tokenNames = entry.tokenNames.map((tokenName) => String(tokenName).trim()).filter(Boolean);
+      return {
+        personId: resolvePersonId(entry, tokenNames, index),
+        displayName: String(entry.displayName).trim(),
+        tokenNames,
+      };
+    })
     .filter((entry) => entry.tokenNames.length > 0);
 }
 

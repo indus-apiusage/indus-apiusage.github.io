@@ -32,7 +32,7 @@ test("loadRuntimeConfig falls back to committed repo mapping config", async () =
       timezone: "Asia/Shanghai",
       people: [
         {
-          displayName: "蔡俊豪",
+          displayName: "Alice",
           tokenNames: ["cjh"],
         },
       ],
@@ -43,6 +43,38 @@ test("loadRuntimeConfig falls back to committed repo mapping config", async () =
   const runtime = await loadRuntimeConfig({ cwd, env: {} });
 
   assert.equal(runtime.people.length, 1);
-  assert.equal(runtime.people[0].displayName, "蔡俊豪");
+  assert.equal(runtime.people[0].displayName, "Alice");
   assert.deepEqual(runtime.people[0].tokenNames, ["cjh"]);
+  assert.equal(runtime.people[0].personId, "alice");
+});
+
+test("loadRuntimeConfig keeps distinct token mappings when displayName cannot produce a slug", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-config-fallback-"));
+  const configDir = path.join(cwd, "config");
+
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(
+    path.join(configDir, "people.json"),
+    JSON.stringify({
+      people: [
+        {
+          displayName: "???",
+          tokenNames: ["cjh"],
+        },
+        {
+          displayName: "***",
+          tokenNames: ["cjy"],
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const runtime = await loadRuntimeConfig({ cwd, env: {} });
+
+  assert.equal(runtime.people.length, 2);
+  assert.deepEqual(
+    runtime.people.map((person) => person.personId),
+    ["cjh", "cjy"],
+  );
 });
