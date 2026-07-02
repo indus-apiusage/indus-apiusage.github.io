@@ -32,6 +32,15 @@ const theme = {
   gridBaseHex: 0x141d2b,
 }
 
+const memberTokenDisplayOverrides = {
+  "蔡俊豪": ["cjh"],
+}
+const personDisplayNameOverrides = {
+  cjh: "\u8521\u4fca\u8c6a",
+  cjy: "\u9648\u4fca\u5b87",
+  zdy: "\u66fe\u5fb7\u5b87",
+}
+
 function qs(selector) {
   return document.querySelector(selector)
 }
@@ -53,6 +62,53 @@ function setHTML(selector, value) {
 
   if (element) {
     element.innerHTML = value
+  }
+}
+
+function normalizeDisplayName(value) {
+  const normalizedValue = typeof value === "string" ? value.trim() : ""
+  return personDisplayNameOverrides[normalizedValue] || normalizedValue
+}
+
+function normalizePersonEntry(person) {
+  if (!person) {
+    return person
+  }
+
+  return {
+    ...person,
+    displayName: normalizeDisplayName(person.displayName),
+  }
+}
+
+function normalizeDayEntry(day) {
+  if (!day) {
+    return day
+  }
+
+  return {
+    ...day,
+    people: Array.isArray(day.people) ? day.people.map(normalizePersonEntry) : day.people,
+  }
+}
+
+function normalizePayload(payload) {
+  if (!payload) {
+    return payload
+  }
+
+  return {
+    ...payload,
+    days: Array.isArray(payload.days) ? payload.days.map(normalizeDayEntry) : [],
+    people: Array.isArray(payload.people)
+      ? payload.people.map((person) => ({
+          ...normalizePersonEntry(person),
+          days: Array.isArray(person.days) ? person.days.map((day) => ({ ...day })) : [],
+        }))
+      : [],
+    dailyPersonRows: Array.isArray(payload.dailyPersonRows)
+      ? payload.dailyPersonRows.map(normalizePersonEntry)
+      : [],
   }
 }
 
@@ -111,6 +167,205 @@ function displayDays(payload) {
   return days.slice(firstActiveIndex)
 }
 
+const usageMetricKeys = [
+  "requests",
+  "rawQuota",
+  "primaryCost",
+  "promptTokens",
+  "completionTokens",
+  "cacheReadTokens",
+  "cacheWriteTokens",
+]
+
+function monthKeyOf(value) {
+  return value ? String(value).slice(0, 7) : ""
+}
+
+function addUsageMetrics(target, source) {
+  usageMetricKeys.forEach((key) => {
+    target[key] += Number(source?.[key] || 0)
+  })
+}
+
+function createModelAggregate(name) {
+  return {
+    name,
+    requests: 0,
+    rawQuota: 0,
+    primaryCost: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  }
+}
+
+function displayTokenNames(entity) {
+  const tokenNames = Array.isArray(entity?.tokenNames) ? entity.tokenNames.filter(Boolean) : []
+  const normalizedDisplayName = normalizeDisplayName(entity?.displayName)
+  const overrideTokenNames =
+    normalizedDisplayName === personDisplayNameOverrides.cjh ? ["cjh"] : memberTokenDisplayOverrides[normalizedDisplayName]
+
+  return [...new Set(overrideTokenNames?.length ? overrideTokenNames : tokenNames)]
+}
+
+function mergeModelsIntoMap(modelMap, models = []) {
+  models.forEach((model) => {
+    if (!model?.name) {
+      return
+    }
+
+    if (!modelMap.has(model.name)) {
+      modelMap.set(model.name, createModelAggregate(model.name))
+    }
+
+    addUsageMetrics(modelMap.get(model.name), model)
+  })
+}
+
+function createPersonAggregate(person) {
+  return {
+    displayName: person.displayName,
+    tokenNames: [],
+    requests: 0,
+    rawQuota: 0,
+    primaryCost: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    models: [],
+    _tokenSet: new Set(),
+    _modelMap: new Map(),
+  }
+}
+
+function mergePeopleIntoMap(peopleMap, people = []) {
+  people.forEach((person) => {
+    if (!person?.displayName) {
+      return
+    }
+
+    if (!peopleMap.has(person.displayName)) {
+      peopleMap.set(person.displayName, createPersonAggregate(person))
+    }
+
+    const target = peopleMap.get(person.displayName)
+    addUsageMetrics(target, person)
+
+    ;(person.tokenNames || []).forEach((tokenName) => {
+      target._tokenSet.add(tokenName)
+    })
+
+    mergeModelsIntoMap(target._modelMap, person.models || [])
+  })
+}
+
+function finalizeModelMap(modelMap) {
+  return sortByPrimaryCost([...modelMap.values()].map((model) => ({ ...model })))
+}
+
+function finalizePeopleMap(peopleMap) {
+  return sortByPrimaryCost(
+    [...peopleMap.values()].map((person) => ({
+      displayName: person.displayName,
+      tokenNames: [...person._tokenSet],
+      requests: person.requests,
+      rawQuota: person.rawQuota,
+      primaryCost: person.primaryCost,
+      promptTokens: person.promptTokens,
+      completionTokens: person.completionTokens,
+      cacheReadTokens: person.cacheReadTokens,
+      cacheWriteTokens: person.cacheWriteTokens,
+      models: finalizeModelMap(person._modelMap),
+    })),
+  )
+}
+
+function aggregateMonthsFromEntries(entries, options = {}) {
+  const { includePeople = false } = options
+  const buckets = new Map()
+
+  ;[...entries]
+    .sort((left, right) => (left?.date || "").localeCompare(right?.date || ""))
+    .forEach((entry) => {
+      const monthKey = monthKeyOf(entry?.date)
+
+      if (!monthKey) {
+        return
+      }
+
+      if (!buckets.has(monthKey)) {
+        buckets.set(monthKey, {
+          date: monthKey,
+          startDate: entry.date,
+          endDate: entry.date,
+          activeDays: 0,
+          requests: 0,
+          rawQuota: 0,
+          primaryCost: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          tokenNames: [],
+          people: [],
+          models: [],
+          _tokenSet: new Set(),
+          _peopleMap: new Map(),
+          _modelMap: new Map(),
+        })
+      }
+
+      const bucket = buckets.get(monthKey)
+
+      bucket.startDate = bucket.startDate < entry.date ? bucket.startDate : entry.date
+      bucket.endDate = bucket.endDate > entry.date ? bucket.endDate : entry.date
+      bucket.activeDays += 1
+
+      addUsageMetrics(bucket, entry)
+      ;(entry.tokenNames || []).forEach((tokenName) => {
+        if (tokenName) {
+          bucket._tokenSet.add(tokenName)
+        }
+      })
+      mergeModelsIntoMap(bucket._modelMap, entry.models || [])
+
+      if (includePeople) {
+        mergePeopleIntoMap(bucket._peopleMap, entry.people || [])
+      }
+    })
+
+  return [...buckets.values()].map((bucket) => ({
+    date: bucket.date,
+    startDate: bucket.startDate,
+    endDate: bucket.endDate,
+    activeDays: bucket.activeDays,
+    requests: bucket.requests,
+    rawQuota: bucket.rawQuota,
+    primaryCost: bucket.primaryCost,
+    promptTokens: bucket.promptTokens,
+    completionTokens: bucket.completionTokens,
+    cacheReadTokens: bucket.cacheReadTokens,
+    cacheWriteTokens: bucket.cacheWriteTokens,
+    tokenNames: [...bucket._tokenSet].sort((left, right) => left.localeCompare(right)),
+    people: finalizePeopleMap(bucket._peopleMap),
+    models: finalizeModelMap(bucket._modelMap),
+  }))
+}
+
+function displayMonths(payload) {
+  return aggregateMonthsFromEntries(displayDays(payload), { includePeople: true })
+}
+
+function currentMonthEntry(months) {
+  return months.find((month) => month.date === state.selectedDate) || months.at(-1) || null
+}
+
+function formatMonthShortLabel(value) {
+  return value ? value.slice(2).replace("-", "/") : "-"
+}
+
 function createLineChart(days) {
   if (!days.length) {
     return emptyChart("暂无可展示的趋势数据")
@@ -145,8 +400,8 @@ function createLineChart(days) {
     .filter((_, index) => index === 0 || index === points.length - 1 || index === Math.floor(points.length / 2))
     .map(
       (point) =>
-        `<text class="chart-label" x="${point.x}" y="${height - 8}" text-anchor="middle">${point.label.slice(
-          5,
+        `<text class="chart-label" x="${point.x}" y="${height - 8}" text-anchor="middle">${formatMonthShortLabel(
+          point.label,
         )}</text>`,
     )
     .join("")
@@ -224,7 +479,7 @@ function createBarChart(rows, currency) {
   `
 }
 
-function renderHeroMarquee(payload, selectedDay, days) {
+function legacyOldRenderHeroMarquee(payload, selectedDay, days) {
   const peakDay = pickPeakDay(days)
   const topModel = pickTopModel(selectedDay)
 
@@ -253,7 +508,7 @@ function renderHeroMarquee(payload, selectedDay, days) {
     .join("")
 }
 
-function renderHeroMonthFocus(payload, selectedDay, days) {
+function legacyRenderHeroMonthFocus(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const currentMonth = monthSnapshot(days, selectedDay?.date || payload.summary.latestDate || days.at(-1)?.date)
   const focus = qs("#hero-month-focus")
@@ -385,7 +640,7 @@ function renderReminderBoard() {
     .join("")
 }
 
-function renderSignalDeck(payload, selectedDay, days) {
+function legacyRenderSignalDeck(payload, selectedDay, days) {
   const topPerson = selectedDay?.people?.[0]
   const peakDay = pickPeakDay(days)
   const totalPeople = payload.summary.activePeople || payload.people?.length || 0
@@ -432,7 +687,7 @@ function renderSignalDeck(payload, selectedDay, days) {
     .join("")
 }
 
-function renderSummaryCards(payload, selectedDay, days) {
+function legacyRenderSummaryCards(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const topPerson = selectedDay?.people?.[0]
 
@@ -476,7 +731,7 @@ function renderSummaryCards(payload, selectedDay, days) {
     .join("")
 }
 
-function renderSelectedDayCards(payload, selectedDay) {
+function legacyOldRenderSelectedDayCards(payload, selectedDay) {
   const currency = normalizeCurrency(payload.currency)
 
   const cards = [
@@ -540,7 +795,7 @@ function renderPeopleTable(payload, selectedDay) {
 
     const searchTargets = [
       row.displayName,
-      ...(row.tokenNames || []),
+      ...displayTokenNames(row),
       ...(row.models || []).map((model) => model.name),
     ].join(" ")
 
@@ -557,7 +812,7 @@ function renderPeopleTable(payload, selectedDay) {
               </td>
               <td>
                 <div class="token-list">
-                  ${(row.tokenNames || [])
+                  ${displayTokenNames(row)
                     .map((tokenName) => `<span class="chip chip--subtle">${tokenName}</span>`)
                     .join("")}
                 </div>
@@ -610,9 +865,13 @@ function renderWarnings(payload) {
 function updateDateOptions(payload) {
   const dateInput = qs("#date-select")
   const hint = qs("#date-range-hint")
-  const days = displayDays(payload)
+  const days = displayMonths(payload)
   const earliestDate = days[0]?.date || ""
-  const latestDate = payload.summary.latestDate || days.at(-1)?.date || ""
+  const latestDate = days.at(-1)?.date || ""
+
+  if (dateInput) {
+    dateInput.type = "month"
+  }
 
   dateInput.min = earliestDate
   dateInput.max = latestDate
@@ -623,8 +882,7 @@ function updateDateOptions(payload) {
 }
 
 function currentDay(payload) {
-  const days = displayDays(payload)
-  return days.find((day) => day.date === state.selectedDate) || days.at(-1) || null
+  return currentMonthEntry(displayMonths(payload))
 }
 
 function activePage() {
@@ -632,19 +890,11 @@ function activePage() {
 }
 
 function formatDayLabel(value) {
-  return value ? value.slice(5).replace("-", "/") : "-"
+  return formatMonthShortLabel(value)
 }
 
 function formatLongDay(value) {
-  if (!value) {
-    return "-"
-  }
-
-  return new Date(`${value}T00:00:00`).toLocaleDateString("zh-CN", {
-    month: "long",
-    day: "numeric",
-    weekday: "short",
-  })
+  return formatMonthLabel(value)
 }
 
 function formatMonthLabel(value) {
@@ -781,8 +1031,7 @@ function aggregateModels(days) {
 }
 
 function aggregateMemberDays(member) {
-  const chronologicalDays = [...(member?.days || [])].sort((left, right) => left.date.localeCompare(right.date))
-  return chronologicalDays
+  return aggregateMonthsFromEntries(member?.days || [])
 }
 
 function aggregateMemberModels(member) {
@@ -796,7 +1045,7 @@ function filteredMembers(payload) {
   return members.filter((member) =>
     matchFilter(filterText, [
       member.displayName,
-      ...(member.tokenNames || []),
+      ...displayTokenNames(member),
       ...aggregateMemberModels(member).map((model) => model.name),
     ]),
   )
@@ -1043,7 +1292,7 @@ function createStackList(rows, options = {}) {
     .join("")
 }
 
-function renderCommonFrame(payload, selectedDay, days) {
+function legacyOldRenderCommonFrame(payload, selectedDay, days) {
   const dateInput = qs("#date-select")
   const hint = qs("#date-range-hint")
 
@@ -1073,7 +1322,7 @@ function renderCommonFrame(payload, selectedDay, days) {
   highlightActiveNav()
 }
 
-function renderMembersPage(payload, selectedDay, days) {
+function legacyOldRenderMembersPage(payload, selectedDay, days) {
   const members = filteredMembers(payload)
   const featuredMember = members[0] || null
   const peakDay = pickPeakDay(days)
@@ -1257,7 +1506,7 @@ function renderMembersPage(payload, selectedDay, days) {
   )
 }
 
-function renderModelsPage(payload, selectedDay, days) {
+function legacyOldRenderModelsPage(payload, selectedDay, days) {
   const models = filteredModels(days)
   const topSeries = models.slice(0, 3)
   const selectedDayModels = sortByPrimaryCost(selectedDay?.models || [])
@@ -1422,7 +1671,7 @@ function renderModelsPage(payload, selectedDay, days) {
   )
 }
 
-function renderTimelinePage(payload, selectedDay, days) {
+function legacyOldRenderTimelinePage(payload, selectedDay, days) {
   const timelineDays = filteredTimelineDays(days)
   const peakDays = sortByPrimaryCost(timelineDays).slice(0, 3)
   const quietDay = quietEntry(timelineDays)
@@ -2184,7 +2433,7 @@ async function initWebGLScene() {
     }
 
     if (state.payload) {
-      updateWebGLSceneTelemetry(currentDay(state.payload), displayDays(state.payload))
+      updateWebGLSceneTelemetry(currentDay(state.payload), displayMonths(state.payload))
     }
 
     animate()
@@ -2340,7 +2589,7 @@ function refreshMotionEffects() {
   }
 }
 
-function renderDashboard() {
+function legacyOldRenderDashboard() {
   const payload = state.payload
   const currency = normalizeCurrency(payload.currency)
   const days = displayDays(payload)
@@ -2393,10 +2642,1040 @@ function renderDashboard() {
   refreshMotionEffects()
 }
 
-function renderCurrentPage() {
+function legacyOldRenderCurrentPage() {
   const payload = state.payload
   const days = displayDays(payload)
   const selectedDay = currentDay(payload)
+
+  if (activePage() === "overview") {
+    renderDashboard()
+    return
+  }
+
+  renderCommonFrame(payload, selectedDay, days)
+  renderWarnings(payload)
+
+  if (activePage() === "members") {
+    renderMembersPage(payload, selectedDay, days)
+  } else if (activePage() === "models") {
+    renderModelsPage(payload, selectedDay, days)
+  } else if (activePage() === "timeline") {
+    renderTimelinePage(payload, selectedDay, days)
+  }
+
+  refreshMotionEffects()
+}
+
+function applyMonthlyCopy() {
+  const dateInput = qs("#date-select")
+  const dateLabel = qs('label[for="date-select"]')
+  const filterLabel = qs('label[for="person-filter"]')
+  const filterInput = qs("#person-filter")
+  const heroText = qs(".hero-text")
+
+  if (dateInput) {
+    dateInput.type = "month"
+  }
+
+  if (dateLabel) {
+    dateLabel.textContent = "查看月份"
+  }
+
+  if (activePage() === "overview") {
+    if (heroText) {
+      heroText.textContent =
+        "首页聚焦当月视图、全周期峰值和总览态势。你可以把这里当作月度总控台，再从上方跳转到成员、模型和时间线页面，查看更细颗粒度的月级统计结构。"
+    }
+
+    if (filterLabel) {
+      filterLabel.textContent = "筛选成员 / Key"
+    }
+
+    if (filterInput) {
+      filterInput.placeholder = "输入成员名、token 名称或模型关键字"
+    }
+
+    const costPanel = qs("#cost-trend")?.closest("article")
+    const rankingPanel = qs("#people-ranking")?.closest("article")
+    const summaryPanel = qs("#selected-day-cards")?.closest("section")
+    const detailPanel = qs("#people-table-body")?.closest("section")
+
+    if (costPanel) {
+      costPanel.querySelector("h2").textContent = "近期开销趋势"
+      costPanel.querySelector("p").textContent = "从首个有请求的月份开始，展示每月人民币消耗。"
+    }
+
+    if (rankingPanel) {
+      rankingPanel.querySelector("h2").textContent = "当月成员排行"
+      rankingPanel.querySelector("p").textContent = "按所选月份统计的成员消耗排行。"
+    }
+
+    if (summaryPanel) {
+      summaryPanel.querySelector("h2").textContent = "当月汇总"
+    }
+
+    if (detailPanel) {
+      detailPanel.querySelector("p").textContent = "按 API Key 名称归属展示所选月份明细。"
+    }
+  } else if (activePage() === "members") {
+    if (heroText) {
+      heroText.textContent =
+        "这一页聚焦成员画像，拆开看每个人的全周期消耗、活跃月份、主力模型和逐月波动，更适合做团队内部归属、对比和复盘。"
+    }
+
+    if (filterLabel) {
+      filterLabel.textContent = "筛选成员"
+    }
+
+    if (filterInput) {
+      filterInput.placeholder = "输入成员名、token 名称或模型关键字"
+    }
+
+    const gridPanel = qs("#member-grid")?.closest("section")
+    const trendPanel = qs("#member-trend-chart")?.closest("article")
+    const modelPanel = qs("#member-model-stack")?.closest("article")
+    const tablePanel = qs("#member-day-table-body")?.closest("section")
+    const tableHead = qs("#member-day-table-body")?.closest("table")?.querySelector("th")
+
+    if (gridPanel) {
+      gridPanel.querySelector("p").textContent = "全周期累计、峰值月份和主力模型的汇总卡片。"
+    }
+
+    if (trendPanel) {
+      trendPanel.querySelector("h2").textContent = "成员月度轨迹"
+    }
+
+    if (modelPanel) {
+      modelPanel.querySelector("p").textContent = "聚焦当前筛选结果中的头部成员。"
+    }
+
+    if (tablePanel) {
+      tablePanel.querySelector("h2").textContent = "月级作战记录"
+      tablePanel.querySelector("p").textContent = "当前焦点成员在每个月的请求与消费记录。"
+    }
+
+    if (tableHead) {
+      tableHead.textContent = "月份"
+    }
+  } else if (activePage() === "models") {
+    if (heroText) {
+      heroText.textContent =
+        "这里按模型维度梳理整体消耗构成、主力模型趋势和所选月份的即时分布，适合观察不同模型在团队中的真实使用占比。"
+    }
+
+    if (filterLabel) {
+      filterLabel.textContent = "筛选模型"
+    }
+
+    if (filterInput) {
+      filterInput.placeholder = "输入模型名称关键字"
+    }
+
+    const gridPanel = qs("#model-grid")?.closest("section")
+    const trendPanel = qs("#model-trend-chart")?.closest("article")
+    const monthPanel = qs("#model-day-board")?.closest("article")
+    const tablePanel = qs("#model-table-body")?.closest("section")
+    const logPanel = qs("#model-daily-log")?.closest("section")
+
+    if (gridPanel) {
+      gridPanel.querySelector("p").textContent = "全周期模型累计消耗、请求量和峰值趋势。"
+    }
+
+    if (trendPanel) {
+      trendPanel.querySelector("p").textContent = "展示头部模型在最近周期内的月级消耗走向。"
+    }
+
+    if (monthPanel) {
+      monthPanel.querySelector("h2").textContent = "所选月份模型分布"
+      monthPanel.querySelector("p").textContent = "当前月份下各模型的消费分布。"
+    }
+
+    if (tablePanel) {
+      tablePanel.querySelector("p").textContent = "以全周期累计结果查看每个模型的总消耗、请求数与峰值月份。"
+      const peakHead = tablePanel.querySelectorAll("th")[5]
+      const peakValueHead = tablePanel.querySelectorAll("th")[6]
+      if (peakHead) {
+        peakHead.textContent = "峰值月份"
+      }
+      if (peakValueHead) {
+        peakValueHead.textContent = "峰值金额"
+      }
+    }
+
+    if (logPanel) {
+      logPanel.querySelector("h2").textContent = "每月主导模型"
+      logPanel.querySelector("p").textContent = "按月份查看当月消耗最高的模型。"
+    }
+  } else if (activePage() === "timeline") {
+    if (heroText) {
+      heroText.textContent =
+        "时间线页适合看整段周期内发生了什么，从首个有请求的月份开始，按每个月的总消耗、请求量和主导模型做完整的时间序列复盘。"
+    }
+
+    if (filterLabel) {
+      filterLabel.textContent = "筛选时间线"
+    }
+
+    if (filterInput) {
+      filterInput.placeholder = "输入月份、成员名或模型关键字"
+    }
+
+    const sidePanel = qs("#timeline-side-panel")?.closest("section")
+    const gridPanel = qs("#timeline-grid")?.closest("section")
+    const costPanel = qs("#timeline-cost-chart")?.closest("article")
+    const requestPanel = qs("#timeline-request-chart")?.closest("article")
+    const tablePanel = qs("#timeline-table-body")?.closest("section")
+    const peakPanel = qs("#peak-grid")?.closest("section")
+    const firstHead = qs("#timeline-table-body")?.closest("table")?.querySelector("th")
+
+    if (sidePanel) {
+      sidePanel.querySelector("p").textContent = "峰值、均值与低谷月份的快速观察。"
+    }
+
+    if (gridPanel) {
+      gridPanel.querySelector("h2").textContent = "逐月节点"
+      gridPanel.querySelector("p").textContent = "用卡片方式扫一遍每个月的总请求、总消耗与主导模型。"
+    }
+
+    if (costPanel) {
+      costPanel.querySelector("h2").textContent = "月级消耗曲线"
+      costPanel.querySelector("p").textContent = "按人民币消耗查看完整时间序列。"
+    }
+
+    if (requestPanel) {
+      requestPanel.querySelector("h2").textContent = "月级请求曲线"
+      requestPanel.querySelector("p").textContent = "按请求数观察活跃波峰。"
+    }
+
+    if (tablePanel) {
+      tablePanel.querySelector("p").textContent = "逐月查看总消耗、请求数、主导模型和活跃成员数。"
+    }
+
+    if (peakPanel) {
+      peakPanel.querySelector("h2").textContent = "峰值月份重点观察"
+      peakPanel.querySelector("p").textContent = "把最值得关注的月份单独拉出来看。"
+    }
+
+    if (firstHead) {
+      firstHead.textContent = "月份"
+    }
+  }
+}
+
+function renderHeroMarquee(payload, selectedDay, days) {
+  const peakDay = pickPeakDay(days)
+  const topModel = pickTopModel(selectedDay)
+
+  qs("#hero-marquee").innerHTML = [
+    {
+      title: "Live Window",
+      body: peakDay
+        ? `${formatMonthLabel(days[0]?.date || "")} 至 ${formatMonthLabel(days.at(-1)?.date || "")}`
+        : "等待同步区间",
+    },
+    {
+      title: "Peak Month",
+      body: peakDay ? `${formatMonthLabel(peakDay.date)} · ¥${Number(peakDay.primaryCost || 0).toFixed(4)}` : "尚未捕获峰值",
+    },
+    {
+      title: "Dominant Model",
+      body: `${topModel} · ${numberFormatter(selectedDay?.requests || 0)} req`,
+    },
+  ]
+    .map(
+      (item, index) => `
+        <div class="hero-chip reveal-card is-visible" style="--delay: ${80 + index * 60}ms">
+          <strong>${item.title}</strong>
+          <span>${item.body}</span>
+        </div>
+      `,
+    )
+    .join("")
+}
+
+function renderHeroMonthFocus(payload, selectedDay) {
+  const currency = normalizeCurrency(payload.currency)
+  const focus = qs("#hero-month-focus")
+
+  if (!focus) {
+    return
+  }
+
+  focus.innerHTML = selectedDay?.date
+    ? `
+        <div class="hero-month-topline">
+          <small class="hero-month-kicker">Natural Month Focus</small>
+          <span class="hero-month-badge">${formatMonthLabel(selectedDay.date)}</span>
+        </div>
+        <div class="hero-month-metrics">
+          <div class="hero-month-primary">
+            <span class="hero-month-label">当月累计消耗</span>
+            <strong>${currencyFormatter(currency.primarySymbol, selectedDay.primaryCost || 0)}</strong>
+            <p>按自然月汇总展示当前选择月份内的全部消耗。</p>
+          </div>
+          <div class="hero-month-side">
+            <div class="hero-month-stat">
+              <span>累计请求</span>
+              <strong>${numberFormatter(selectedDay.requests)}</strong>
+            </div>
+            <div class="hero-month-stat">
+              <span>统计区间</span>
+              <strong>${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}</strong>
+            </div>
+          </div>
+        </div>
+      `
+    : `
+        <div class="hero-month-empty">
+          <small class="hero-month-kicker">Natural Month Focus</small>
+          <strong>等待月度数据</strong>
+          <p>同步到首个有效月份后，这里会显示自然月累计消耗。</p>
+        </div>
+      `
+}
+
+function renderSignalDeck(payload, selectedDay, days) {
+  const topPerson = selectedDay?.people?.[0]
+  const peakDay = pickPeakDay(days)
+  const totalPeople = payload.summary.activePeople || payload.people?.length || 0
+  const avgDailyCost =
+    days.length > 0
+      ? Number(
+          (days.reduce((sum, day) => sum + Number(day.primaryCost || 0), 0) / days.length).toFixed(4),
+        )
+      : 0
+
+  qs("#signal-deck").innerHTML = [
+    {
+      label: "Peak Month",
+      value: peakDay ? formatMonthLabel(peakDay.date) : "N/A",
+      note: peakDay
+        ? `¥${Number(peakDay.primaryCost || 0).toFixed(4)} / ${numberFormatter(peakDay.requests)} requests`
+        : "等待峰值数据",
+    },
+    {
+      label: "Avg Monthly Burn",
+      value: `¥${avgDailyCost.toFixed(4)}`,
+      note: days.length > 0 ? `按 ${numberFormatter(days.length)} 个月有效区间计算` : "暂无可计算月份",
+    },
+    {
+      label: "Hot Operator",
+      value: topPerson?.displayName || "Standby",
+      note: topPerson ? `当月 ¥${Number(topPerson.primaryCost || 0).toFixed(4)}` : "当前月份没有活跃成员",
+    },
+    {
+      label: "Tracked Members",
+      value: numberFormatter(totalPeople),
+      note: `${numberFormatter(payload.summary.totalRequests || 0)} total requests in ledger`,
+    },
+  ]
+    .map(
+      (item, index) => `
+        <article class="signal-card interactive-card reveal-card" style="--delay: ${140 + index * 60}ms">
+          <small>${item.label}</small>
+          <strong>${item.value}</strong>
+          <span>${item.note}</span>
+        </article>
+      `,
+    )
+    .join("")
+}
+
+function renderSummaryCards(payload, selectedDay) {
+  const currency = normalizeCurrency(payload.currency)
+  const topPerson = selectedDay?.people?.[0]
+
+  const cards = [
+    {
+      label: "当前月份总消耗",
+      value: currencyFormatter(currency.primarySymbol, selectedDay?.primaryCost || 0),
+      caption: "按人民币直接展示",
+    },
+    {
+      label: "当前月份请求数",
+      value: numberFormatter(selectedDay?.requests || 0),
+      caption: `输入 ${numberFormatter(selectedDay?.promptTokens || 0)} / 输出 ${numberFormatter(
+        selectedDay?.completionTokens || 0,
+      )}`,
+    },
+    {
+      label: "活跃成员数",
+      value: numberFormatter(selectedDay?.people?.length || 0),
+      caption: `全周期活跃 ${numberFormatter(payload.summary.activePeople)}`,
+    },
+    {
+      label: "当月最高消耗成员",
+      value: topPerson ? topPerson.displayName : "暂无",
+      caption: topPerson
+        ? `${currencyFormatter(currency.primarySymbol, topPerson.primaryCost)} / ${numberFormatter(topPerson.requests)} 次`
+        : "等待同步",
+    },
+  ]
+
+  qs("#summary-grid").innerHTML = cards
+    .map(
+      (card, index) => `
+        <article class="stat-card interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
+          <small>${card.label}</small>
+          <strong class="stat-card__value">${card.value}</strong>
+          <span class="stat-card__note">${card.caption}</span>
+        </article>
+      `,
+    )
+    .join("")
+}
+
+function renderSelectedDayCards(payload, selectedDay) {
+  const currency = normalizeCurrency(payload.currency)
+
+  const cards = [
+    {
+      label: "平台额度原值",
+      value: numberFormatter(selectedDay?.rawQuota || 0),
+      caption: `1 ${currency.primaryCode} = ${numberFormatter(currency.quotaPerUnit)} quota`,
+      valueType: "numeric",
+    },
+    {
+      label: "缓存读取 Tokens",
+      value: numberFormatter(selectedDay?.cacheReadTokens || 0),
+      caption: "来自月内汇总统计",
+      valueType: "numeric",
+    },
+    {
+      label: "缓存写入 Tokens",
+      value: numberFormatter(selectedDay?.cacheWriteTokens || 0),
+      caption: "聚合 cache_creation_tokens 系列字段",
+      valueType: "numeric",
+    },
+    {
+      label: "Top Models",
+      value: selectedDay?.models?.length ? selectedDay.models[0].name : "暂无",
+      caption: selectedDay?.models?.length ? `${numberFormatter(selectedDay.models[0].requests)} 次请求` : "等待同步",
+    },
+  ]
+
+  qs("#selected-day-cards").innerHTML = cards
+    .map((card, index) => {
+      const valueLength = String(card.value || "").length
+      const sizeClass =
+        card.valueType === "numeric"
+          ? valueLength >= 11
+            ? "stat-card__value--dense"
+            : valueLength >= 9
+              ? "stat-card__value--compact"
+              : ""
+          : ""
+
+      return `
+        <article class="stat-card interactive-card reveal-card" style="--delay: ${220 + index * 60}ms">
+          <small>${card.label}</small>
+          <strong class="stat-card__value ${sizeClass}">${card.value}</strong>
+          <span class="stat-card__note">${card.caption}</span>
+        </article>
+      `
+    })
+    .join("")
+}
+
+function renderCommonFrame(payload, selectedDay, days) {
+  const dateInput = qs("#date-select")
+  const hint = qs("#date-range-hint")
+
+  applyMonthlyCopy()
+
+  if (state.selectedDate && !days.some((day) => day.date === state.selectedDate)) {
+    state.selectedDate = days.at(-1)?.date || null
+  }
+
+  if (dateInput) {
+    dateInput.min = days[0]?.date || ""
+    dateInput.max = days.at(-1)?.date || ""
+    dateInput.value = state.selectedDate || ""
+  }
+
+  if (hint) {
+    hint.textContent =
+      days.length > 0
+        ? `已按月份展示，共 ${numberFormatter(days.length)} 个月`
+        : "暂无可展示的有效月份"
+  }
+
+  setText("#generated-at", dateTimeFormatter(payload.generatedAt))
+  setText("#timezone", payload.source.timezone)
+  setText("#scope", payload.source.scope)
+  setText("#base-url", payload.source.baseUrl)
+  setText("#latest-date", formatMonthLabel(days.at(-1)?.date || payload.summary.latestDate || ""))
+  setText("#sync-status", selectedDay ? "Telemetry Live" : "Standby")
+  highlightActiveNav()
+}
+
+function renderMembersPage(payload, selectedDay, days) {
+  const members = filteredMembers(payload)
+  const featuredMember = members[0] || null
+  const peakDay = pickPeakDay(days)
+  const memberDays = aggregateMemberDays(featuredMember)
+  const memberModels = aggregateMemberModels(featuredMember).slice(0, 5)
+
+  setHTML(
+    "#members-hero-marquee",
+    [
+      {
+        title: "Tracked Members",
+        body: `${numberFormatter(payload.summary.activePeople || 0)} 位活跃成员`,
+      },
+      {
+        title: "Lead Operator",
+        body: featuredMember
+          ? `${featuredMember.displayName} · ¥${Number(featuredMember.totals.primaryCost || 0).toFixed(4)}`
+          : "暂无匹配成员",
+      },
+      {
+        title: "Peak Month",
+        body: peakDay ? `${formatMonthLabel(peakDay.date)} · ¥${Number(peakDay.primaryCost || 0).toFixed(4)}` : "等待峰值月",
+      },
+    ]
+      .map(
+        (item) => `
+          <div class="hero-chip">
+            <strong>${item.title}</strong>
+            <span>${item.body}</span>
+          </div>
+        `,
+      )
+      .join(""),
+  )
+
+  setText(
+    "#featured-member-meta",
+    featuredMember
+      ? `${featuredMember.displayName} · ${numberFormatter(featuredMember.totals.requests)} 次请求 · ${numberFormatter(memberDays.length)} 个月活跃`
+      : "当前筛选条件下没有匹配成员",
+  )
+
+  setText(
+    "#member-trend-meta",
+    featuredMember
+      ? `${featuredMember.displayName} · ${formatMonthLabel(memberDays[0]?.date)} 至 ${formatMonthLabel(memberDays.at(-1)?.date)}`
+      : "暂无成员趋势",
+  )
+
+  setHTML(
+    "#members-side-panel",
+    featuredMember
+      ? [
+          {
+            label: "主力成员",
+            value: featuredMember.displayName,
+            note: `累计 ¥${Number(featuredMember.totals.primaryCost || 0).toFixed(4)}`,
+          },
+          {
+            label: "活跃跨度",
+            value: `${numberFormatter(memberDays.length)} 个月`,
+            note: `${formatMonthLabel(memberDays[0]?.date)} 至 ${formatMonthLabel(memberDays.at(-1)?.date)}`,
+          },
+          {
+            label: "主力模型",
+            value: memberModels[0]?.name || "暂无",
+            note: memberModels[0] ? `${numberFormatter(memberModels[0].requests)} 次请求` : "等待模型数据",
+          },
+        ]
+          .map(
+            (item) => `
+              <div class="insight-row">
+                <span>${item.label}</span>
+                <strong>${item.value}</strong>
+                <p>${item.note}</p>
+              </div>
+            `,
+          )
+          .join("")
+      : emptyChart("暂无匹配成员"),
+  )
+
+  setHTML(
+    "#member-grid",
+    members.length
+      ? members
+          .map((member, index) => {
+            const trend = aggregateMemberDays(member)
+            const peak = peakEntry(trend)
+            const topModel = aggregateMemberModels(member)[0]
+
+            return `
+              <article class="stat-card interactive-card reveal-card">
+                <div class="card-topline">
+                  <small>${member.displayName}</small>
+                  <span class="card-rank">#${String(index + 1).padStart(2, "0")}</span>
+                </div>
+                <strong>${currencyFormatter("¥", member.totals.primaryCost || 0)}</strong>
+                <span>${numberFormatter(member.totals.requests || 0)} 次请求 · ${topModel ? topModel.name : "暂无模型"}</span>
+                <div class="sparkline-wrap">${createSparkline(
+                  trend.map((day) => day.primaryCost || 0),
+                  "#9bbdff",
+                )}</div>
+                <div class="badge-row">
+                  <span class="chip chip--subtle">${peak ? formatMonthLabel(peak.date) : "No peak"}</span>
+                  ${displayTokenNames(member).map((tokenName) => `<span class="chip">${tokenName}</span>`).join("")}
+                </div>
+              </article>
+            `
+          })
+          .join("")
+      : emptyChart("当前筛选条件下没有成员卡片"),
+  )
+
+  setHTML(
+    "#member-trend-chart",
+    featuredMember
+      ? createMetricLineChart(memberDays, {
+          valueKey: "primaryCost",
+          emptyMessage: "暂无成员趋势",
+          stroke: "#9bbdff",
+          fill: "rgba(155, 189, 255, 0.22)",
+          pointColor: "#ff97c5",
+          valueFormatter: (value) => Number(value || 0).toFixed(2),
+        })
+      : emptyChart("当前筛选条件下没有成员趋势"),
+  )
+
+  setHTML(
+    "#member-model-stack",
+    createStackList(memberModels, {
+      labelAccessor: (model) => model.name,
+      noteAccessor: (model) => `${numberFormatter(model.requests)} 次请求`,
+      emptyMessage: "暂无成员模型偏好",
+    }),
+  )
+
+  setHTML(
+    "#member-day-table-body",
+    memberDays.length
+      ? [...memberDays]
+          .sort((left, right) => right.date.localeCompare(left.date))
+          .map(
+            (day) => `
+              <tr>
+                <td>${formatMonthLabel(day.date)}</td>
+                <td>${featuredMember.displayName}</td>
+                <td>
+                  <div class="token-list">
+                    ${displayTokenNames({
+                      displayName: featuredMember.displayName,
+                      tokenNames: day.tokenNames && day.tokenNames.length ? day.tokenNames : featuredMember.tokenNames,
+                    })
+                      .map((tokenName) => `<span class="chip">${tokenName}</span>`)
+                      .join("")}
+                  </div>
+                </td>
+                <td>${numberFormatter(day.requests)}</td>
+                <td><strong>${currencyFormatter("¥", day.primaryCost)}</strong></td>
+                <td>${numberFormatter(day.promptTokens)}</td>
+                <td>${numberFormatter(day.completionTokens)}</td>
+                <td>
+                  <div class="model-chips">
+                    ${(day.models || [])
+                      .map((model) => `<span class="chip chip--subtle">${model.name} · ${numberFormatter(model.requests)}</span>`)
+                      .join("")}
+                  </div>
+                </td>
+              </tr>
+            `,
+          )
+          .join("")
+      : `
+          <tr>
+            <td colspan="8" class="muted">当前筛选条件下没有成员月级记录。</td>
+          </tr>
+        `,
+  )
+}
+
+function renderModelsPage(payload, selectedDay, days) {
+  const models = filteredModels(days)
+  const topSeries = models.slice(0, 3)
+  const selectedDayModels = sortByPrimaryCost(selectedDay?.models || [])
+
+  setHTML(
+    "#models-hero-marquee",
+    [
+      {
+        title: "Tracked Models",
+        body: `${numberFormatter(models.length)} 个模型出现在本周期`,
+      },
+      {
+        title: "Dominant Model",
+        body: models[0] ? `${models[0].name} · ¥${Number(models[0].primaryCost || 0).toFixed(4)}` : "暂无模型",
+      },
+      {
+        title: "Current Month Focus",
+        body: selectedDayModels[0]
+          ? `${formatMonthLabel(selectedDay?.date || "")} · ${selectedDayModels[0].name} · ${numberFormatter(selectedDayModels[0].requests)} req`
+          : "所选月份暂无模型请求",
+      },
+    ]
+      .map(
+        (item) => `
+          <div class="hero-chip">
+            <strong>${item.title}</strong>
+            <span>${item.body}</span>
+          </div>
+        `,
+      )
+      .join(""),
+  )
+
+  setText(
+    "#selected-model-meta",
+    models[0]
+      ? `${models[0].name} 当前为全周期主导模型，共 ${numberFormatter(models[0].requests)} 次请求`
+      : "当前筛选条件下没有模型",
+  )
+
+  setHTML(
+    "#models-side-panel",
+    models.length
+      ? [
+          {
+            label: "头部模型",
+            value: models[0].name,
+            note: `累计 ¥${Number(models[0].primaryCost || 0).toFixed(4)}`,
+          },
+          {
+            label: "峰值月份",
+            value: models[0].peakDay?.date ? formatMonthLabel(models[0].peakDay.date) : "暂无",
+            note: models[0].peakDay ? `单月 ¥${Number(models[0].peakDay.primaryCost || 0).toFixed(4)}` : "暂无峰值月",
+          },
+          {
+            label: "当月模型数",
+            value: numberFormatter(selectedDayModels.length),
+            note: selectedDay ? `${formatMonthLabel(selectedDay.date)} 的即时快照` : "等待月份数据",
+          },
+        ]
+          .map(
+            (item) => `
+              <div class="insight-row">
+                <span>${item.label}</span>
+                <strong>${item.value}</strong>
+                <p>${item.note}</p>
+              </div>
+            `,
+          )
+          .join("")
+      : emptyChart("暂无模型摘要"),
+  )
+
+  setHTML(
+    "#model-grid",
+    models.length
+      ? models
+          .map(
+            (model) => `
+              <article class="stat-card interactive-card reveal-card">
+                <div class="card-topline">
+                  <small>${model.name}</small>
+                  <span class="card-rank">${numberFormatter(model.requests)} req</span>
+                </div>
+                <strong>${currencyFormatter("¥", model.primaryCost || 0)}</strong>
+                <span>${numberFormatter(model.promptTokens)} 输入 / ${numberFormatter(model.completionTokens)} 输出</span>
+                <div class="sparkline-wrap">${createSparkline(
+                  model.days.map((day) => day.primaryCost || 0),
+                  "#ff97c5",
+                )}</div>
+                <div class="badge-row">
+                  <span class="chip chip--subtle">${model.peakDay?.date ? formatMonthLabel(model.peakDay.date) : "No peak"}</span>
+                </div>
+              </article>
+            `,
+          )
+          .join("")
+      : emptyChart("当前筛选条件下没有模型卡片"),
+  )
+
+  setHTML("#model-trend-chart", createModelTrendChart(days, topSeries))
+
+  setHTML(
+    "#model-day-board",
+    createStackList(selectedDayModels, {
+      labelAccessor: (model) => model.name,
+      noteAccessor: (model) => `${numberFormatter(model.requests)} 次请求`,
+      emptyMessage: "所选月份暂无模型分布",
+    }),
+  )
+
+  setHTML(
+    "#model-table-body",
+    models.length
+      ? models
+          .map(
+            (model) => `
+              <tr>
+                <td><strong>${model.name}</strong></td>
+                <td>${numberFormatter(model.requests)}</td>
+                <td>${currencyFormatter("¥", model.primaryCost)}</td>
+                <td>${numberFormatter(model.promptTokens)}</td>
+                <td>${numberFormatter(model.completionTokens)}</td>
+                <td>${model.peakDay?.date ? formatMonthLabel(model.peakDay.date) : "-"}</td>
+                <td>${model.peakDay ? currencyFormatter("¥", model.peakDay.primaryCost) : "-"}</td>
+              </tr>
+            `,
+          )
+          .join("")
+      : `
+          <tr>
+            <td colspan="7" class="muted">当前筛选条件下没有模型表数据。</td>
+          </tr>
+        `,
+  )
+
+  setHTML(
+    "#model-daily-log",
+    [...days]
+      .sort((left, right) => right.date.localeCompare(left.date))
+      .map((day) => {
+        const topModel = sortByPrimaryCost(day.models || [])[0]
+        return `
+          <article class="timeline-card interactive-card reveal-card">
+            <div class="timeline-topline">
+              <span class="timeline-day">${formatMonthLabel(day.date)}</span>
+              <span class="chip chip--subtle">${numberFormatter(day.requests)} req</span>
+            </div>
+            <strong>${topModel?.name || "暂无模型"}</strong>
+            <span>${topModel ? currencyFormatter("¥", topModel.primaryCost) : "0"}</span>
+            <div class="timeline-tags">
+              ${(day.models || []).slice(0, 3).map((model) => `<span class="chip">${model.name}</span>`).join("")}
+            </div>
+          </article>
+        `
+      })
+      .join(""),
+  )
+}
+
+function renderTimelinePage(payload, selectedDay, days) {
+  const timelineDays = filteredTimelineDays(days)
+  const peakDays = sortByPrimaryCost(timelineDays).slice(0, 3)
+  const quietDay = quietEntry(timelineDays)
+  const requestPeak = peakEntry(timelineDays, "requests")
+
+  setHTML(
+    "#timeline-hero-marquee",
+    [
+      {
+        title: "Observed Months",
+        body: `${numberFormatter(timelineDays.length)} 个月有效周期`,
+      },
+      {
+        title: "Peak Burn",
+        body: peakDays[0] ? `${formatMonthLabel(peakDays[0].date)} · ¥${Number(peakDays[0].primaryCost || 0).toFixed(4)}` : "暂无峰值月",
+      },
+      {
+        title: "Peak Requests",
+        body: requestPeak ? `${formatMonthLabel(requestPeak.date)} · ${numberFormatter(requestPeak.requests)} req` : "暂无请求峰值",
+      },
+    ]
+      .map(
+        (item) => `
+          <div class="hero-chip">
+            <strong>${item.title}</strong>
+            <span>${item.body}</span>
+          </div>
+        `,
+      )
+      .join(""),
+  )
+
+  setHTML(
+    "#timeline-side-panel",
+    [
+      {
+        label: "平均月消耗",
+        value: `¥${(
+          timelineDays.reduce((sum, day) => sum + Number(day.primaryCost || 0), 0) / Math.max(timelineDays.length, 1)
+        ).toFixed(4)}`,
+        note: "按有效月份均值计算",
+      },
+      {
+        label: "最低活跃月",
+        value: quietDay?.date ? formatMonthLabel(quietDay.date) : "暂无",
+        note: quietDay ? `${currencyFormatter("¥", quietDay.primaryCost)}` : "暂无静默区间",
+      },
+      {
+        label: "当前查看月",
+        value: selectedDay?.date ? formatMonthLabel(selectedDay.date) : "暂无",
+        note: selectedDay ? `${numberFormatter(selectedDay.requests)} 次请求` : "等待月份选择",
+      },
+    ]
+      .map(
+        (item) => `
+          <div class="insight-row">
+            <span>${item.label}</span>
+            <strong>${item.value}</strong>
+            <p>${item.note}</p>
+          </div>
+        `,
+      )
+      .join(""),
+  )
+
+  setHTML(
+    "#timeline-grid",
+    timelineDays.length
+      ? [...timelineDays]
+          .sort((left, right) => right.date.localeCompare(left.date))
+          .map((day) => {
+            const topModel = sortByPrimaryCost(day.models || [])[0]
+            const fill = peakDays[0]
+              ? clamp((Number(day.primaryCost || 0) / Number(peakDays[0].primaryCost || 1)) * 100, 0, 100)
+              : 0
+
+            return `
+              <article class="timeline-card interactive-card reveal-card">
+                <div class="timeline-topline">
+                  <span class="timeline-day">${formatMonthLabel(day.date)}</span>
+                  <span class="chip chip--subtle">${numberFormatter(day.people?.length || 0)} 人活跃</span>
+                </div>
+                <strong>${currencyFormatter("¥", day.primaryCost)}</strong>
+                <span>${numberFormatter(day.requests)} 次请求 · ${topModel?.name || "暂无模型"}</span>
+                <div class="timeline-meter">
+                  <div class="timeline-meter-fill" style="--fill:${fill}%"></div>
+                </div>
+              </article>
+            `
+          })
+          .join("")
+      : emptyChart("当前筛选条件下没有月度时间线节点"),
+  )
+
+  setHTML(
+    "#timeline-cost-chart",
+    createMetricLineChart(timelineDays, {
+      valueKey: "primaryCost",
+      emptyMessage: "暂无月级消耗曲线",
+      stroke: "#9bbdff",
+      fill: "rgba(155, 189, 255, 0.22)",
+      pointColor: "#ff97c5",
+      valueFormatter: (value) => Number(value || 0).toFixed(2),
+    }),
+  )
+
+  setHTML(
+    "#timeline-request-chart",
+    createMetricLineChart(timelineDays, {
+      valueKey: "requests",
+      emptyMessage: "暂无月级请求曲线",
+      stroke: "#ceb7ff",
+      fill: "rgba(206, 183, 255, 0.22)",
+      pointColor: "#ff97c5",
+      valueFormatter: (value) => numberFormatter(value),
+    }),
+  )
+
+  setHTML(
+    "#timeline-table-body",
+    timelineDays.length
+      ? [...timelineDays]
+          .sort((left, right) => right.date.localeCompare(left.date))
+          .map((day) => {
+            const topModel = sortByPrimaryCost(day.models || [])[0]
+            return `
+              <tr>
+                <td>${formatMonthLabel(day.date)}</td>
+                <td>${numberFormatter(day.requests)}</td>
+                <td><strong>${currencyFormatter("¥", day.primaryCost)}</strong></td>
+                <td>${numberFormatter(day.promptTokens)}</td>
+                <td>${numberFormatter(day.completionTokens)}</td>
+                <td>${topModel?.name || "-"}</td>
+                <td>${numberFormatter(day.people?.length || 0)}</td>
+              </tr>
+            `
+          })
+          .join("")
+      : `
+          <tr>
+            <td colspan="7" class="muted">当前筛选条件下没有月级时间线表数据。</td>
+          </tr>
+        `,
+  )
+
+  setHTML(
+    "#peak-grid",
+    peakDays.length
+      ? peakDays
+          .map(
+            (day) => `
+              <article class="signal-card interactive-card reveal-card">
+                <small>${formatMonthLabel(day.date)}</small>
+                <strong>${currencyFormatter("¥", day.primaryCost)}</strong>
+                <span>${numberFormatter(day.requests)} 次请求 · ${
+                  sortByPrimaryCost(day.models || [])[0]?.name || "暂无模型"
+                }</span>
+              </article>
+            `,
+          )
+          .join("")
+      : emptyChart("暂无峰值观察"),
+  )
+}
+
+function renderDashboard() {
+  const payload = state.payload
+  const currency = normalizeCurrency(payload.currency)
+  const days = displayMonths(payload)
+  const selectedDay = currentMonthEntry(days)
+  const dateInput = qs("#date-select")
+  const hint = qs("#date-range-hint")
+
+  applyMonthlyCopy()
+
+  if (state.selectedDate && !days.some((day) => day.date === state.selectedDate)) {
+    state.selectedDate = days.at(-1)?.date || null
+  }
+
+  dateInput.min = days[0]?.date || ""
+  dateInput.max = days.at(-1)?.date || ""
+  dateInput.value = state.selectedDate || ""
+  hint.textContent =
+    days.length > 0
+      ? `已按月份展示，共 ${numberFormatter(days.length)} 个月`
+      : "暂无可展示的有效月份"
+
+  qs("#generated-at").textContent = dateTimeFormatter(payload.generatedAt)
+  qs("#timezone").textContent = payload.source.timezone
+  qs("#scope").textContent = payload.source.scope
+  qs("#base-url").textContent = payload.source.baseUrl
+  qs("#latest-date").textContent = formatMonthLabel(days.at(-1)?.date || payload.summary.latestDate || "")
+  qs("#sync-status").textContent = selectedDay ? "Telemetry Live" : "Standby"
+
+  if (selectedDay) {
+    qs("#selected-date-meta").textContent = `${formatMonthLabel(selectedDay.date)} · 共 ${numberFormatter(
+      selectedDay.people.length,
+    )} 位成员有消费记录`
+  } else {
+    qs("#selected-date-meta").textContent = "暂无可用月份"
+  }
+
+  renderHeroMonthFocus(payload, selectedDay, days)
+  renderHeroMarquee(payload, selectedDay, days)
+  renderReminderBoard()
+  renderSignalDeck(payload, selectedDay, days)
+  renderSummaryCards(payload, selectedDay, days)
+  renderSelectedDayCards(payload, selectedDay)
+  renderPeopleTable(payload, selectedDay)
+  renderWarnings(payload)
+
+  qs("#cost-trend").innerHTML = createLineChart(days)
+  qs("#people-ranking").innerHTML = createBarChart(selectedDay?.people || [], currency)
+
+  updateWebGLSceneTelemetry(selectedDay, days)
+
+  highlightActiveNav()
+  refreshMotionEffects()
+}
+
+function renderCurrentPage() {
+  const payload = state.payload
+  const days = displayMonths(payload)
+  const selectedDay = currentMonthEntry(days)
 
   if (activePage() === "overview") {
     renderDashboard()
@@ -2423,7 +3702,7 @@ async function loadPayload() {
     throw new Error(`Failed to load dashboard data: ${response.status}`)
   }
 
-  state.payload = await response.json()
+  state.payload = normalizePayload(await response.json())
 }
 
 function wireEvents() {
