@@ -919,6 +919,29 @@ function formatMonthDayLabel(value) {
   })
 }
 
+function formatFullDateLabel(value) {
+  if (!value) {
+    return "-"
+  }
+
+  return new Date(`${value}T00:00:00`).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
+function latestDailyUsageDay(payload) {
+  const dailyDays = Array.isArray(payload?.days) ? payload.days : []
+  const latestDate = payload?.summary?.latestDate || ""
+
+  return (
+    dailyDays.find((day) => day?.date === latestDate) ||
+    [...dailyDays].sort((left, right) => right.date.localeCompare(left.date))[0] ||
+    null
+  )
+}
+
 function monthSnapshot(days, anchorDate) {
   if (!anchorDate) {
     return {
@@ -3115,6 +3138,12 @@ function renderMembersPage(payload, selectedDay, days) {
   const peakDay = pickPeakDay(days)
   const memberDays = aggregateMemberDays(featuredMember)
   const memberModels = aggregateMemberModels(featuredMember).slice(0, 5)
+  const latestUsageDay = latestDailyUsageDay(payload)
+  const memberLookup = new Map(members.map((member) => [member.displayName, member]))
+  const latestUsagePeople = sortByPrimaryCost(
+    (latestUsageDay?.people || []).filter((person) => memberLookup.has(person.displayName)),
+    (person) => person.primaryCost || 0,
+  )
 
   setHTML(
     "#members-hero-marquee",
@@ -3147,9 +3176,9 @@ function renderMembersPage(payload, selectedDay, days) {
 
   setText(
     "#featured-member-meta",
-    featuredMember
-      ? `${featuredMember.displayName} · ${numberFormatter(featuredMember.totals.requests)} 次请求 · ${numberFormatter(memberDays.length)} 个月活跃`
-      : "当前筛选条件下没有匹配成员",
+    latestUsageDay
+      ? `${formatFullDateLabel(latestUsageDay.date)} · ${numberFormatter(latestUsagePeople.length)} 位成员有当日记录`
+      : "当前没有可展示的成员当日用量",
   )
 
   setText(
@@ -3161,35 +3190,37 @@ function renderMembersPage(payload, selectedDay, days) {
 
   setHTML(
     "#members-side-panel",
-    featuredMember
-      ? [
-          {
-            label: "主力成员",
-            value: featuredMember.displayName,
-            note: `累计 ¥${Number(featuredMember.totals.primaryCost || 0).toFixed(4)}`,
-          },
-          {
-            label: "活跃跨度",
-            value: `${numberFormatter(memberDays.length)} 个月`,
-            note: `${formatMonthLabel(memberDays[0]?.date)} 至 ${formatMonthLabel(memberDays.at(-1)?.date)}`,
-          },
-          {
-            label: "主力模型",
-            value: memberModels[0]?.name || "暂无",
-            note: memberModels[0] ? `${numberFormatter(memberModels[0].requests)} 次请求` : "等待模型数据",
-          },
-        ]
-          .map(
-            (item) => `
-              <div class="insight-row">
-                <span>${item.label}</span>
-                <strong>${item.value}</strong>
-                <p>${item.note}</p>
+    latestUsagePeople.length
+      ? latestUsagePeople
+          .map((person) => {
+            const linkedMember = memberLookup.get(person.displayName) || person
+            const topModel = sortByPrimaryCost(person.models || [])[0]
+            const tokenNames = displayTokenNames(linkedMember)
+
+            return `
+              <div class="insight-row insight-row--daily">
+                <span>${person.displayName}</span>
+                <strong>${currencyFormatter("¥", person.primaryCost || 0)}</strong>
+                <div class="insight-inline-metrics">
+                  <div class="insight-inline-metric">
+                    <small>请求</small>
+                    <strong>${numberFormatter(person.requests)}</strong>
+                  </div>
+                  <div class="insight-inline-metric">
+                    <small>输入</small>
+                    <strong>${numberFormatter(person.promptTokens)}</strong>
+                  </div>
+                  <div class="insight-inline-metric">
+                    <small>输出</small>
+                    <strong>${numberFormatter(person.completionTokens)}</strong>
+                  </div>
+                </div>
+                <p>${tokenNames.join(" / ") || "未命名 Key"} · ${topModel?.name || "暂无模型"}</p>
               </div>
-            `,
-          )
+            `
+          })
           .join("")
-      : emptyChart("暂无匹配成员"),
+      : emptyChart(latestUsageDay ? "当前筛选条件下没有成员当日用量" : "今日暂无成员用量"),
   )
 
   setHTML(
