@@ -2996,21 +2996,25 @@ function renderHeroMonthFocus(payload, selectedDay, days) {
           </div>
         </div>
         <div class="hero-month-side">
-          <div class="hero-month-stat">
-            <span>累计请求</span>
-            <strong>${numberFormatter(selectedDay.requests)}</strong>
+          <div class="hero-month-side-group">
+            <div class="hero-month-stat">
+              <span>累计请求</span>
+              <strong>${numberFormatter(selectedDay.requests)}</strong>
+            </div>
+            <div class="hero-month-stat">
+              <span>累计已用</span>
+              <strong>${currencyFormatter(currency.primarySymbol, balance.usedBalance)}</strong>
+            </div>
           </div>
-          <div class="hero-month-stat">
-            <span>使用率</span>
-            <strong>${percentFormatter(balance.utilizationRate)}</strong>
-          </div>
-          <div class="hero-month-stat">
-            <span>累计已用</span>
-            <strong>${currencyFormatter(currency.primarySymbol, balance.usedBalance)}</strong>
-          </div>
-          <div class="hero-month-stat">
-            <span>统计区间</span>
-            <strong>${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}</strong>
+          <div class="hero-month-side-group">
+            <div class="hero-month-stat">
+              <span>使用率</span>
+              <strong>${percentFormatter(balance.utilizationRate)}</strong>
+            </div>
+            <div class="hero-month-stat">
+              <span>统计区间</span>
+              <strong>${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}</strong>
+            </div>
           </div>
         </div>
       `

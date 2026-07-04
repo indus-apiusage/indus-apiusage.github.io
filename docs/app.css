@@ -651,17 +651,29 @@ th,
 .hero-month-side {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 18px;
   margin-top: 16px;
 }
 
+.hero-month-side-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
 .hero-month-stat {
+  min-width: 0;
+  min-height: 122px;
   padding: 14px 16px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 90%),
     rgba(255, 255, 255, 0.025);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .hero-month-stat span {
@@ -2228,6 +2240,10 @@ tbody tr:hover {
 
   .hero-month-side {
     grid-template-columns: 1fr;
+  }
+
+  .hero-month-side-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .reminder-board__header {
