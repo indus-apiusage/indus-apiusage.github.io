@@ -2983,7 +2983,7 @@ function renderHeroMonthFocus(payload, selectedDay, days) {
         <div class="hero-month-metrics">
           <div class="hero-month-primary hero-month-primary--panel">
             <span class="hero-month-label">当月累计消耗</span>
-            <strong>${currencyFormatter(currency.primarySymbol, selectedDay.primaryCost || 0)}</strong>
+            <strong class="hero-month-value hero-month-value--cost">${currencyFormatter(currency.primarySymbol, selectedDay.primaryCost || 0)}</strong>
             <p>按自然月汇总展示当前选择月份内的全部消耗。</p>
           </div>
           <div class="hero-month-primary hero-month-primary--panel hero-month-primary--balance">
