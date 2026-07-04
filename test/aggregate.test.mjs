@@ -24,6 +24,14 @@ test("buildDashboardPayload groups usage by configured token owner", () => {
       usd_exchange_rate: 7.3,
       display_in_currency: true,
     },
+    account: {
+      quota: 750000,
+      used_quota: 500000,
+      request_count: 12,
+      username: "alice",
+      display_name: "Alice",
+      group: "default",
+    },
     dayResults: [
       {
         date: "2026-07-01",
@@ -58,6 +66,10 @@ test("buildDashboardPayload groups usage by configured token owner", () => {
   assert.equal(payload.currency.primaryCode, "CNY");
   assert.equal(payload.currency.primarySymbol, "¥");
   assert.equal(payload.currency.secondaryCode, null);
+  assert.equal(payload.account.displayName, "Alice");
+  assert.equal(payload.account.remainingPrimaryBalance, 1.5);
+  assert.equal(payload.account.usedPrimaryCost, 1);
+  assert.equal(payload.account.utilizationRate, 0.4);
   assert.equal(payload.people.length, 2);
   assert.equal(payload.people[0].displayName, "unknown-key");
   assert.equal(payload.people[1].displayName, "Alice");

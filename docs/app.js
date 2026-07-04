@@ -134,6 +134,10 @@ function numberFormatter(value) {
   return Number(value || 0).toLocaleString("en-US")
 }
 
+function percentFormatter(value, digits = 2) {
+  return `${(Number(value || 0) * 100).toFixed(digits)}%`
+}
+
 function dateTimeFormatter(value) {
   if (!value || value.startsWith("1970-01-01")) {
     return "尚未生成"
@@ -150,6 +154,51 @@ function emptyChart(message) {
 
 function pickPeakDay(days) {
   return [...days].sort((left, right) => (right.primaryCost || 0) - (left.primaryCost || 0))[0] || null
+}
+
+function buildBalanceSnapshot(payload, days) {
+  const account = payload?.account || {}
+  const remainingBalance = Number(account.remainingPrimaryBalance || 0)
+  const usedBalance = Number(account.usedPrimaryCost || 0)
+  const utilizationRate = Number(account.utilizationRate || 0)
+  const latestMonth = Array.isArray(days) ? days.at(-1) : null
+  const latestMonthlyBurn = Number(latestMonth?.primaryCost || 0)
+
+  let badge = "余额待观察"
+  let badgeTone = "stat-card__badge--watch"
+  let runwayText = "最近月份还没有消耗样本"
+
+  if (remainingBalance <= 0) {
+    badge = "需要立即充值"
+    badgeTone = "stat-card__badge--danger"
+    runwayText = "当前余额已归零，建议马上补充额度"
+  } else if (latestMonthlyBurn > 0) {
+    const runwayMonths = remainingBalance / latestMonthlyBurn
+    runwayText = `按最近月份消耗约可支撑 ${runwayMonths.toFixed(2)} 个月`
+
+    if (runwayMonths < 1) {
+      badge = "建议尽快充值"
+      badgeTone = "stat-card__badge--danger"
+    } else if (runwayMonths < 2.5) {
+      badge = "建议关注余额"
+      badgeTone = "stat-card__badge--watch"
+    } else {
+      badge = "余额相对充足"
+      badgeTone = "stat-card__badge--ok"
+    }
+  } else if (remainingBalance >= 1) {
+    badge = "余额已同步"
+    badgeTone = "stat-card__badge--ok"
+  }
+
+  return {
+    remainingBalance,
+    usedBalance,
+    utilizationRate,
+    badge,
+    badgeTone,
+    runwayText,
+  }
 }
 
 function pickTopModel(day) {
@@ -2888,13 +2937,13 @@ function applyMonthlyCopy() {
 function renderHeroMarquee(payload, selectedDay, days) {
   const peakDay = pickPeakDay(days)
   const topModel = pickTopModel(selectedDay)
+  const currency = normalizeCurrency(payload.currency)
+  const balance = buildBalanceSnapshot(payload, days)
 
   qs("#hero-marquee").innerHTML = [
     {
-      title: "Live Window",
-      body: peakDay
-        ? `${formatMonthLabel(days[0]?.date || "")} 至 ${formatMonthLabel(days.at(-1)?.date || "")}`
-        : "等待同步区间",
+      title: "Current Balance",
+      body: `${currencyFormatter(currency.primarySymbol, balance.remainingBalance)} · ${balance.badge}`,
     },
     {
       title: "Peak Month",
@@ -3004,11 +3053,20 @@ function renderSignalDeck(payload, selectedDay, days) {
     .join("")
 }
 
-function renderSummaryCards(payload, selectedDay) {
+function renderSummaryCards(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const topPerson = selectedDay?.people?.[0]
+  const balance = buildBalanceSnapshot(payload, days)
 
   const cards = [
+    {
+      label: "当前余额",
+      value: currencyFormatter(currency.primarySymbol, balance.remainingBalance),
+      caption: `${balance.runwayText} · 累计已用 ${currencyFormatter(currency.primarySymbol, balance.usedBalance)} · 使用率 ${percentFormatter(balance.utilizationRate)}`,
+      featured: true,
+      badge: balance.badge,
+      badgeTone: balance.badgeTone,
+    },
     {
       label: "当前月份总消耗",
       value: currencyFormatter(currency.primarySymbol, selectedDay?.primaryCost || 0),
@@ -3038,10 +3096,11 @@ function renderSummaryCards(payload, selectedDay) {
   qs("#summary-grid").innerHTML = cards
     .map(
       (card, index) => `
-        <article class="stat-card interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
+        <article class="stat-card ${card.featured ? "stat-card--featured" : ""} interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
           <small>${card.label}</small>
           <strong class="stat-card__value">${card.value}</strong>
-          <span class="stat-card__note">${card.caption}</span>
+          ${card.badge ? `<em class="stat-card__badge ${card.badgeTone || ""}">${card.badge}</em>` : ""}
+          <span class="stat-card__note ${card.featured ? "stat-card__note--featured" : ""}">${card.caption}</span>
         </article>
       `,
     )

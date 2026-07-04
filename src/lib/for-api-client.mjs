@@ -153,6 +153,10 @@ export class ForApiClient {
     return this.requestJson("/api/status", { authRequired: false });
   }
 
+  async fetchSelf() {
+    return this.requestJson("/api/user/self");
+  }
+
   async login() {
     if (this.cookies.size > 0 || this.hasLoggedIn) {
       return;

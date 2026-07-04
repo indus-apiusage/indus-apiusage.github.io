@@ -50,6 +50,8 @@ async function main() {
 
   const statusResponse = await client.fetchStatus();
   const status = statusResponse?.data ?? {};
+  const selfResponse = await client.fetchSelf();
+  const account = selfResponse?.data ?? {};
 
   if (hasFlag("--placeholder")) {
     const placeholder = createPlaceholderPayload({
@@ -57,6 +59,7 @@ async function main() {
       scope: runtime.scope,
       timeZone: runtime.timeZone,
       status,
+      account,
     });
 
     await writeJson(outputPath, placeholder);
@@ -89,6 +92,7 @@ async function main() {
     dayResults,
     config: runtime,
     status,
+    account,
   });
 
   await writeJson(outputPath, payload);

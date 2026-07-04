@@ -42,6 +42,26 @@ function buildCurrencyStatus(status) {
   };
 }
 
+function buildAccountSnapshot(account, currency) {
+  const remainingRawQuota = toNumber(account?.quota);
+  const usedRawQuota = toNumber(account?.used_quota);
+  const totalRawQuota = remainingRawQuota + usedRawQuota;
+
+  return {
+    username: String(account?.username || ""),
+    displayName: String(account?.display_name || account?.username || ""),
+    group: String(account?.group || ""),
+    requestCount: toNumber(account?.request_count),
+    remainingRawQuota,
+    remainingPrimaryBalance: Number(currency.quotaToPrimary(remainingRawQuota).toFixed(6)),
+    usedRawQuota,
+    usedPrimaryCost: Number(currency.quotaToPrimary(usedRawQuota).toFixed(6)),
+    totalRawQuota,
+    totalPrimaryQuota: Number(currency.quotaToPrimary(totalRawQuota).toFixed(6)),
+    utilizationRate: totalRawQuota > 0 ? Number((usedRawQuota / totalRawQuota).toFixed(6)) : 0,
+  };
+}
+
 function createMapper(peopleConfig) {
   const lookup = new Map();
 
@@ -176,7 +196,7 @@ export function buildDayWindow(date, timeZone) {
   };
 }
 
-export function createPlaceholderPayload({ baseUrl, scope, timeZone, status }) {
+export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, account }) {
   const currency = buildCurrencyStatus(status ?? {});
 
   return {
@@ -209,6 +229,7 @@ export function createPlaceholderPayload({ baseUrl, scope, timeZone, status }) {
       customCurrencySymbol: currency.customCurrencySymbol,
       customCurrencyExchangeRate: currency.customCurrencyExchangeRate,
     },
+    account: buildAccountSnapshot(account, currency),
     summary: {
       totalDays: 0,
       totalRequests: 0,
@@ -228,7 +249,7 @@ export function createPlaceholderPayload({ baseUrl, scope, timeZone, status }) {
   };
 }
 
-export function buildDashboardPayload({ dayResults, config, status }) {
+export function buildDashboardPayload({ dayResults, config, status, account }) {
   const currency = buildCurrencyStatus(status ?? {});
   const mapPerson = createMapper(config.people);
 
@@ -423,6 +444,7 @@ export function buildDashboardPayload({ dayResults, config, status }) {
       customCurrencySymbol: currency.customCurrencySymbol,
       customCurrencyExchangeRate: currency.customCurrencyExchangeRate,
     },
+    account: buildAccountSnapshot(account, currency),
     summary: {
       totalDays: days.length,
       totalRequests: sumBy(days, (day) => day.requests),

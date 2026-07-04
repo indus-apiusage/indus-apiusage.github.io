@@ -1306,6 +1306,62 @@ th,
   overflow-wrap: anywhere;
 }
 
+.summary-grid .stat-card--featured {
+  grid-column: span 2;
+  min-height: 220px;
+  background:
+    radial-gradient(circle at top right, rgba(var(--blue-rgb), 0.22), transparent 44%),
+    radial-gradient(circle at left center, rgba(var(--pink-rgb), 0.16), transparent 38%),
+    linear-gradient(155deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02) 45%, rgba(7, 11, 19, 0.7));
+  border-color: rgba(var(--blue-rgb), 0.18);
+}
+
+.summary-grid .stat-card--featured .stat-card__value {
+  font-size: clamp(2.3rem, 4.8vw, 4.1rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.stat-card__badge {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.stat-card__badge--ok {
+  color: rgba(216, 247, 255, 0.94);
+  border-color: rgba(133, 208, 255, 0.24);
+  background: rgba(76, 152, 255, 0.12);
+}
+
+.stat-card__badge--watch {
+  color: rgba(255, 235, 213, 0.96);
+  border-color: rgba(255, 181, 126, 0.24);
+  background: rgba(255, 167, 93, 0.12);
+}
+
+.stat-card__badge--danger {
+  color: rgba(255, 222, 232, 0.96);
+  border-color: rgba(255, 126, 160, 0.24);
+  background: rgba(255, 92, 140, 0.12);
+}
+
+.stat-card__note--featured {
+  max-width: 62ch;
+  font-size: 0.9rem;
+}
+
 .signal-card span,
 .stat-card span {
   position: relative;
@@ -2152,6 +2208,10 @@ tbody tr:hover {
   .catalog-grid,
   .timeline-grid {
     grid-template-columns: 1fr;
+  }
+
+  .summary-grid .stat-card--featured {
+    grid-column: span 1;
   }
 
   .hero-month-topline {
