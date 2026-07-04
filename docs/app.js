@@ -165,12 +165,12 @@ function buildBalanceSnapshot(payload, days) {
   const latestMonthlyBurn = Number(latestMonth?.primaryCost || 0)
 
   let badge = "余额待观察"
-  let badgeTone = "stat-card__badge--watch"
+  let badgeTone = "watch"
   let runwayText = "最近月份还没有消耗样本"
 
   if (remainingBalance <= 0) {
     badge = "需要立即充值"
-    badgeTone = "stat-card__badge--danger"
+    badgeTone = "danger"
     runwayText = "当前余额已归零，建议马上补充额度"
   } else if (latestMonthlyBurn > 0) {
     const runwayMonths = remainingBalance / latestMonthlyBurn
@@ -178,17 +178,17 @@ function buildBalanceSnapshot(payload, days) {
 
     if (runwayMonths < 1) {
       badge = "建议尽快充值"
-      badgeTone = "stat-card__badge--danger"
+      badgeTone = "danger"
     } else if (runwayMonths < 2.5) {
       badge = "建议关注余额"
-      badgeTone = "stat-card__badge--watch"
+      badgeTone = "watch"
     } else {
       badge = "余额相对充足"
-      badgeTone = "stat-card__badge--ok"
+      badgeTone = "ok"
     }
   } else if (remainingBalance >= 1) {
     badge = "余额已同步"
-    badgeTone = "stat-card__badge--ok"
+    badgeTone = "ok"
   }
 
   return {
@@ -2937,13 +2937,13 @@ function applyMonthlyCopy() {
 function renderHeroMarquee(payload, selectedDay, days) {
   const peakDay = pickPeakDay(days)
   const topModel = pickTopModel(selectedDay)
-  const currency = normalizeCurrency(payload.currency)
-  const balance = buildBalanceSnapshot(payload, days)
 
   qs("#hero-marquee").innerHTML = [
     {
-      title: "Current Balance",
-      body: `${currencyFormatter(currency.primarySymbol, balance.remainingBalance)} · ${balance.badge}`,
+      title: "Live Window",
+      body: peakDay
+        ? `${formatMonthLabel(days[0]?.date || "")} 至 ${formatMonthLabel(days.at(-1)?.date || "")}`
+        : "等待同步区间",
     },
     {
       title: "Peak Month",
@@ -2965,8 +2965,9 @@ function renderHeroMarquee(payload, selectedDay, days) {
     .join("")
 }
 
-function renderHeroMonthFocus(payload, selectedDay) {
+function renderHeroMonthFocus(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
+  const balance = buildBalanceSnapshot(payload, days)
   const focus = qs("#hero-month-focus")
 
   if (!focus) {
@@ -2980,20 +2981,36 @@ function renderHeroMonthFocus(payload, selectedDay) {
           <span class="hero-month-badge">${formatMonthLabel(selectedDay.date)}</span>
         </div>
         <div class="hero-month-metrics">
-          <div class="hero-month-primary">
+          <div class="hero-month-primary hero-month-primary--panel">
             <span class="hero-month-label">当月累计消耗</span>
             <strong>${currencyFormatter(currency.primarySymbol, selectedDay.primaryCost || 0)}</strong>
             <p>按自然月汇总展示当前选择月份内的全部消耗。</p>
           </div>
-          <div class="hero-month-side">
-            <div class="hero-month-stat">
-              <span>累计请求</span>
-              <strong>${numberFormatter(selectedDay.requests)}</strong>
+          <div class="hero-month-primary hero-month-primary--panel hero-month-primary--balance">
+            <div class="hero-month-primary-head">
+              <span class="hero-month-label">当前余额</span>
+              <em class="hero-month-pill hero-month-pill--${balance.badgeTone}">${balance.badge}</em>
             </div>
-            <div class="hero-month-stat">
-              <span>统计区间</span>
-              <strong>${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}</strong>
-            </div>
+            <strong>${currencyFormatter(currency.primarySymbol, balance.remainingBalance)}</strong>
+            <p>${balance.runwayText}</p>
+          </div>
+        </div>
+        <div class="hero-month-side">
+          <div class="hero-month-stat">
+            <span>累计请求</span>
+            <strong>${numberFormatter(selectedDay.requests)}</strong>
+          </div>
+          <div class="hero-month-stat">
+            <span>累计已用</span>
+            <strong>${currencyFormatter(currency.primarySymbol, balance.usedBalance)}</strong>
+          </div>
+          <div class="hero-month-stat">
+            <span>使用率</span>
+            <strong>${percentFormatter(balance.utilizationRate)}</strong>
+          </div>
+          <div class="hero-month-stat">
+            <span>统计区间</span>
+            <strong>${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}</strong>
           </div>
         </div>
       `
@@ -3056,17 +3073,8 @@ function renderSignalDeck(payload, selectedDay, days) {
 function renderSummaryCards(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const topPerson = selectedDay?.people?.[0]
-  const balance = buildBalanceSnapshot(payload, days)
 
   const cards = [
-    {
-      label: "当前余额",
-      value: currencyFormatter(currency.primarySymbol, balance.remainingBalance),
-      caption: `${balance.runwayText} · 累计已用 ${currencyFormatter(currency.primarySymbol, balance.usedBalance)} · 使用率 ${percentFormatter(balance.utilizationRate)}`,
-      featured: true,
-      badge: balance.badge,
-      badgeTone: balance.badgeTone,
-    },
     {
       label: "当前月份总消耗",
       value: currencyFormatter(currency.primarySymbol, selectedDay?.primaryCost || 0),
@@ -3096,11 +3104,10 @@ function renderSummaryCards(payload, selectedDay, days) {
   qs("#summary-grid").innerHTML = cards
     .map(
       (card, index) => `
-        <article class="stat-card ${card.featured ? "stat-card--featured" : ""} interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
+        <article class="stat-card interactive-card reveal-card" style="--delay: ${180 + index * 60}ms">
           <small>${card.label}</small>
           <strong class="stat-card__value">${card.value}</strong>
-          ${card.badge ? `<em class="stat-card__badge ${card.badgeTone || ""}">${card.badge}</em>` : ""}
-          <span class="stat-card__note ${card.featured ? "stat-card__note--featured" : ""}">${card.caption}</span>
+          <span class="stat-card__note">${card.caption}</span>
         </article>
       `,
     )
