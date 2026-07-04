@@ -2991,7 +2991,7 @@ function renderHeroMonthFocus(payload, selectedDay, days) {
               <span class="hero-month-label">当前余额</span>
               <em class="hero-month-pill hero-month-pill--${balance.badgeTone}">${balance.badge}</em>
             </div>
-            <strong>${currencyFormatter(currency.primarySymbol, balance.remainingBalance)}</strong>
+            <strong class="hero-month-value hero-month-value--balance">${currencyFormatter(currency.primarySymbol, balance.remainingBalance)}</strong>
             <p>${balance.runwayText}</p>
           </div>
         </div>
@@ -3001,12 +3001,12 @@ function renderHeroMonthFocus(payload, selectedDay, days) {
             <strong>${numberFormatter(selectedDay.requests)}</strong>
           </div>
           <div class="hero-month-stat">
-            <span>累计已用</span>
-            <strong>${currencyFormatter(currency.primarySymbol, balance.usedBalance)}</strong>
-          </div>
-          <div class="hero-month-stat">
             <span>使用率</span>
             <strong>${percentFormatter(balance.utilizationRate)}</strong>
+          </div>
+          <div class="hero-month-stat">
+            <span>累计已用</span>
+            <strong>${currencyFormatter(currency.primarySymbol, balance.usedBalance)}</strong>
           </div>
           <div class="hero-month-stat">
             <span>统计区间</span>

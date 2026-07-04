@@ -621,6 +621,10 @@ th,
   overflow-wrap: anywhere;
 }
 
+.hero-month-value--balance {
+  font-size: clamp(1.82rem, 3.7vw, 3.45rem);
+}
+
 .hero-month-primary p,
 .hero-month-empty p {
   margin: 0;
