@@ -806,6 +806,139 @@ th,
   line-height: 1.5;
 }
 
+.hero-density-grid,
+.scene-density-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero-density-grid {
+  margin-top: 18px;
+}
+
+.scene-density-grid {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(var(--blue-rgb), 0.1);
+}
+
+.density-card {
+  position: relative;
+  min-width: 0;
+  min-height: 126px;
+  padding: 16px 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(var(--blue-rgb), 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(var(--blue-rgb), 0.11), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
+  overflow: hidden;
+}
+
+.density-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -18% -44% auto;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--blue-rgb), 0.16), transparent 66%);
+  pointer-events: none;
+}
+
+.density-card--hot {
+  background:
+    radial-gradient(circle at top right, rgba(var(--pink-rgb), 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
+}
+
+.density-card--hot::after {
+  background: radial-gradient(circle, rgba(var(--pink-rgb), 0.18), transparent 66%);
+}
+
+.density-card--note {
+  background:
+    radial-gradient(circle at top right, rgba(var(--lilac-rgb), 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
+}
+
+.density-card--note::after {
+  background: radial-gradient(circle, rgba(var(--lilac-rgb), 0.18), transparent 66%);
+}
+
+.density-card__head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.density-card small {
+  display: block;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.density-card__badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 15ch;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--blue-rgb), 0.16);
+  background: rgba(var(--blue-rgb), 0.08);
+  color: var(--text-soft);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.density-card__value {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 12px;
+  color: var(--text);
+  font-size: clamp(1.16rem, 1.55vw, 1.52rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.density-card__value--dense {
+  font-size: clamp(1rem, 1.34vw, 1.24rem);
+}
+
+.density-card span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.scene-density-grid .density-card {
+  min-height: 118px;
+}
+
+.scene-density-grid .density-card__value {
+  font-size: clamp(1rem, 1.38vw, 1.34rem);
+}
+
 .panel {
   padding: 22px;
   overflow: hidden;
@@ -2282,6 +2415,10 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 
+  .scene-density-grid {
+    grid-template-columns: 1fr;
+  }
+
   .stack-row {
     grid-template-columns: 1fr;
   }
@@ -2321,6 +2458,8 @@ tbody tr:hover {
   .mini-grid,
   .signal-deck,
   .scene-readout,
+  .hero-density-grid,
+  .scene-density-grid,
   .catalog-grid,
   .timeline-grid {
     grid-template-columns: 1fr;

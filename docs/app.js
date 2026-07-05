@@ -134,6 +134,13 @@ function numberFormatter(value) {
   return Number(value || 0).toLocaleString("en-US")
 }
 
+function compactNumberFormatter(value, digits = 1) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: digits,
+  }).format(Number(value || 0))
+}
+
 function percentFormatter(value, digits = 2) {
   return `${(Number(value || 0) * 100).toFixed(digits)}%`
 }
@@ -150,6 +157,23 @@ function dateTimeFormatter(value) {
 
 function emptyChart(message) {
   return `<div class="chart-empty">${message}</div>`
+}
+
+function renderDensityCards(items, baseDelay = 240) {
+  return items
+    .map(
+      (item, index) => `
+        <article class="density-card ${item.tone ? `density-card--${item.tone}` : ""} reveal-card" style="--delay: ${baseDelay + index * 55}ms">
+          <div class="density-card__head">
+            <small>${item.label}</small>
+            ${item.badge ? `<span class="density-card__badge">${item.badge}</span>` : ""}
+          </div>
+          <strong class="density-card__value ${item.dense ? "density-card__value--dense" : ""}">${item.value}</strong>
+          <span>${item.note}</span>
+        </article>
+      `,
+    )
+    .join("")
 }
 
 function pickPeakDay(days) {
@@ -703,6 +727,52 @@ function renderReminderBoard(payload, selectedDay, days) {
       `,
     )
     .join("")
+
+  const peakDay = pickPeakDay(days)
+  const topModel = selectedDay?.models?.[0] || null
+
+  setHTML(
+    "#scene-density-board",
+    renderDensityCards(
+      [
+        {
+          label: "Top Operator",
+          value: topPerson?.displayName || "暂无成员",
+          badge: topModel?.name || "No model",
+          note: topPerson
+            ? `${currencyFormatter("¥", topPerson.primaryCost || 0)} · ${numberFormatter(topPerson.requests || 0)} req`
+            : "等待当前月份成员排名",
+        },
+        {
+          label: "Monthly Requests",
+          value: compactNumberFormatter(selectedDay?.requests || 0),
+          badge: `${numberFormatter(selectedDay?.people?.length || 0)} 人活跃`,
+          note: selectedDay
+            ? `${compactNumberFormatter(selectedDay.promptTokens || 0)} 输入 / ${compactNumberFormatter(selectedDay.completionTokens || 0)} 输出`
+            : "等待月份请求快照",
+          dense: true,
+          tone: "note",
+        },
+        {
+          label: "Peak Burn",
+          value: peakDay?.date ? formatMonthLabel(peakDay.date) : "暂无峰值",
+          badge: peakDay ? currencyFormatter("¥", peakDay.primaryCost || 0) : "等待峰值",
+          note: peakDay
+            ? `${pickTopModel(peakDay)} · ${numberFormatter(peakDay.requests || 0)} req`
+            : "等待峰值月份出现",
+          tone: "hot",
+        },
+        {
+          label: "Risk Gauge",
+          value: percentFormatter(balance.utilizationRate),
+          badge: balance.badge,
+          note: `累计已用 ${currencyFormatter("¥", balance.usedBalance)}`,
+          dense: true,
+        },
+      ],
+      340,
+    ),
+  )
 }
 
 function legacyRenderSignalDeck(payload, selectedDay, days) {
@@ -3230,6 +3300,10 @@ function renderMembersPage(payload, selectedDay, days) {
     (latestUsageDay?.people || []).filter((person) => memberLookup.has(person.displayName)),
     (person) => person.primaryCost || 0,
   )
+  const topMonthMember = selectedDay?.people?.[0] || featuredMember
+  const topPromptMember = sortByPrimaryCost(selectedDay?.people || [], (person) => person.promptTokens || 0)[0] || null
+  const featuredPeakMonth = peakEntry(memberDays)
+  const featuredModelLeader = memberModels[0] || null
 
   setHTML(
     "#members-hero-marquee",
@@ -3258,6 +3332,51 @@ function renderMembersPage(payload, selectedDay, days) {
         `,
       )
       .join(""),
+  )
+
+  setHTML(
+    "#members-hero-density",
+    renderDensityCards(
+      [
+        {
+          label: "本月领跑",
+          value: topMonthMember?.displayName || "暂无成员",
+          badge: displayTokenNames(topMonthMember || featuredMember).join(" / ") || "未命名 Key",
+          note: topMonthMember
+            ? `${currencyFormatter("¥", topMonthMember.primaryCost || topMonthMember.totals?.primaryCost || 0)} · ${numberFormatter(topMonthMember.requests || topMonthMember.totals?.requests || 0)} req`
+            : "等待成员快照",
+        },
+        {
+          label: "活跃窗口",
+          value: `${numberFormatter(memberDays.length)} 个月`,
+          badge: featuredPeakMonth?.date ? `峰值 ${formatMonthLabel(featuredPeakMonth.date)}` : "等待峰值",
+          note:
+            memberDays.length > 0
+              ? `${formatMonthLabel(memberDays[0].date)} 至 ${formatMonthLabel(memberDays.at(-1).date)}`
+              : "暂无有效月份",
+          tone: "note",
+        },
+        {
+          label: "主力模型",
+          value: featuredModelLeader?.name || "暂无模型",
+          badge: featuredMember?.displayName || "No member",
+          note: featuredModelLeader
+            ? `${currencyFormatter("¥", featuredModelLeader.primaryCost || 0)} · ${numberFormatter(featuredModelLeader.requests || 0)} req`
+            : "等待模型偏好形成",
+        },
+        {
+          label: "最高输入",
+          value: compactNumberFormatter(topPromptMember?.promptTokens || 0),
+          badge: topPromptMember?.displayName || "暂无成员",
+          note: topPromptMember
+            ? `输出 ${compactNumberFormatter(topPromptMember.completionTokens || 0)} · ${pickTopModel(topPromptMember)}`
+            : "等待输入峰值",
+          dense: true,
+          tone: "hot",
+        },
+      ],
+      250,
+    ),
   )
 
   setText(
@@ -3411,6 +3530,13 @@ function renderModelsPage(payload, selectedDay, days) {
   const models = filteredModels(days)
   const topSeries = models.slice(0, 3)
   const selectedDayModels = sortByPrimaryCost(selectedDay?.models || [])
+  const topModel = models[0] || null
+  const topOutputModel = sortByPrimaryCost(models, (model) => model.completionTokens || 0)[0] || null
+  const totalModelCost = models.reduce((sum, model) => sum + Number(model.primaryCost || 0), 0)
+  const topModelShare = totalModelCost > 0 ? Number(topModel?.primaryCost || 0) / totalModelCost : 0
+  const selectedMonthIndex = days.findIndex((day) => day.date === selectedDay?.date)
+  const previousMonth = selectedMonthIndex > 0 ? days[selectedMonthIndex - 1] : null
+  const previousTopModel = sortByPrimaryCost(previousMonth?.models || [])[0] || null
 
   setHTML(
     "#models-hero-marquee",
@@ -3439,6 +3565,50 @@ function renderModelsPage(payload, selectedDay, days) {
         `,
       )
       .join(""),
+  )
+
+  setHTML(
+    "#models-hero-density",
+    renderDensityCards(
+      [
+        {
+          label: "头部占比",
+          value: percentFormatter(topModelShare),
+          badge: topModel?.name || "暂无模型",
+          note: topModel ? `全周期累计 ${currencyFormatter("¥", topModel.primaryCost || 0)}` : "等待模型聚合",
+        },
+        {
+          label: "当前主导",
+          value: selectedDayModels[0]?.name || "暂无模型",
+          badge: selectedDay?.date ? formatMonthLabel(selectedDay.date) : "等待月份",
+          note: selectedDayModels[0]
+            ? `${currencyFormatter("¥", selectedDayModels[0].primaryCost || 0)} · ${numberFormatter(selectedDayModels[0].requests || 0)} req`
+            : "所选月份暂无模型请求",
+          tone: "note",
+        },
+        {
+          label: "高输出模型",
+          value: topOutputModel?.name || "暂无模型",
+          badge: topOutputModel ? `${compactNumberFormatter(topOutputModel.completionTokens || 0)} 输出` : "暂无输出",
+          note: topOutputModel
+            ? `输入 ${compactNumberFormatter(topOutputModel.promptTokens || 0)} · ${currencyFormatter("¥", topOutputModel.primaryCost || 0)}`
+            : "等待输出峰值",
+          tone: "hot",
+        },
+        {
+          label: "模型覆盖",
+          value: `${numberFormatter(models.length)} 个`,
+          badge: `${numberFormatter(selectedDayModels.length)} 当月活跃`,
+          note:
+            previousTopModel && selectedDayModels[0]
+              ? selectedDayModels[0].name === previousTopModel.name
+                ? `与前月保持一致 · ${previousTopModel.name}`
+                : `前月主导为 ${previousTopModel.name}`
+              : "等待更多月份样本",
+        },
+      ],
+      250,
+    ),
   )
 
   setText(
@@ -3573,6 +3743,23 @@ function renderTimelinePage(payload, selectedDay, days) {
   const peakDays = sortByPrimaryCost(timelineDays).slice(0, 3)
   const quietDay = quietEntry(timelineDays)
   const requestPeak = peakEntry(timelineDays, "requests")
+  const firstTimelineDay = timelineDays[0] || null
+  const lastTimelineDay = timelineDays.at(-1) || null
+  const dominantModels = timelineDays.map((day) => sortByPrimaryCost(day.models || [])[0]?.name).filter(Boolean)
+  const dominantModelSwitches = dominantModels.reduce(
+    (count, modelName, index) => count + (index > 0 && modelName !== dominantModels[index - 1] ? 1 : 0),
+    0,
+  )
+  const selectedMonthIndex = timelineDays.findIndex((day) => day.date === selectedDay?.date)
+  const previousTimelineMonth = selectedMonthIndex > 0 ? timelineDays[selectedMonthIndex - 1] : null
+  const selectedDelta =
+    selectedDay && previousTimelineMonth
+      ? Number(selectedDay.primaryCost || 0) - Number(previousTimelineMonth.primaryCost || 0)
+      : null
+  const peakSpread =
+    peakDays[0] && quietDay
+      ? Number(peakDays[0].primaryCost || 0) / Math.max(Number(quietDay.primaryCost || 0), 0.0001)
+      : null
 
   setHTML(
     "#timeline-hero-marquee",
@@ -3599,6 +3786,50 @@ function renderTimelinePage(payload, selectedDay, days) {
         `,
       )
       .join(""),
+  )
+
+  setHTML(
+    "#timeline-hero-density",
+    renderDensityCards(
+      [
+        {
+          label: "首个有效月",
+          value: firstTimelineDay ? formatMonthLabel(firstTimelineDay.date) : "暂无月份",
+          badge: lastTimelineDay ? `至 ${formatMonthLabel(lastTimelineDay.date)}` : "等待周期",
+          note: `${numberFormatter(timelineDays.length)} 个月有效周期`,
+        },
+        {
+          label: "波峰倍率",
+          value: peakSpread ? `${peakSpread.toFixed(1)}x` : "暂无倍率",
+          badge:
+            peakDays[0] && quietDay
+              ? `${formatMonthLabel(peakDays[0].date)} / ${formatMonthLabel(quietDay.date)}`
+              : "等待波动样本",
+          note:
+            peakDays[0] && quietDay
+              ? `${currencyFormatter("¥", peakDays[0].primaryCost || 0)} 对比 ${currencyFormatter("¥", quietDay.primaryCost || 0)}`
+              : "暂无可比较月份",
+          tone: "hot",
+        },
+        {
+          label: "请求峰值",
+          value: requestPeak?.date ? formatMonthLabel(requestPeak.date) : "暂无峰值",
+          badge: requestPeak ? `${compactNumberFormatter(requestPeak.requests || 0)} req` : "等待请求峰值",
+          note: requestPeak ? `${pickTopModel(requestPeak)} 主导` : "等待请求高峰出现",
+          tone: "note",
+        },
+        {
+          label: "模型切换",
+          value: `${numberFormatter(dominantModelSwitches)} 次`,
+          badge: `${numberFormatter(new Set(dominantModels).size)} 个主导模型`,
+          note:
+            selectedDelta === null
+              ? "等待月度对比"
+              : `${selectedDelta >= 0 ? "较前月增加" : "较前月回落"} ${currencyFormatter("¥", Math.abs(selectedDelta))}`,
+        },
+      ],
+      250,
+    ),
   )
 
   setHTML(
