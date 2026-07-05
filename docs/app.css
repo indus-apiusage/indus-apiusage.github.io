@@ -141,7 +141,7 @@ body[data-page="timeline"] {
 .page-shell {
   position: relative;
   z-index: 1;
-  width: min(1260px, calc(100vw - 32px));
+  width: min(1328px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 28px 0 72px;
 }
@@ -344,6 +344,41 @@ body[data-page="timeline"] {
   min-height: 360px;
   padding: 32px;
   overflow: hidden;
+}
+
+.hero--compact .hero-copy {
+  min-height: 286px;
+  padding: 24px 28px;
+}
+
+.hero--compact h1 {
+  max-width: 10.8ch;
+  margin-top: 14px;
+  font-size: clamp(2.55rem, 4.45vw, 4.65rem);
+}
+
+.hero--compact .hero-text {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  line-height: 1.66;
+}
+
+.hero--compact .hero-marquee {
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.hero--compact .hero-chip {
+  padding: 14px 14px 16px;
+}
+
+.hero--compact .hero-chip strong {
+  font-size: 0.96rem;
+}
+
+.hero--compact .hero-chip span {
+  margin-top: 6px;
+  font-size: 0.78rem;
 }
 
 .hero-copy::after {
@@ -662,6 +697,10 @@ th,
   min-width: 0;
 }
 
+.hero-month-side-group--range {
+  grid-template-columns: minmax(0, 0.76fr) minmax(0, 1.24fr);
+}
+
 .hero-month-stat {
   min-width: 0;
   min-height: 122px;
@@ -692,6 +731,20 @@ th,
   font-size: 1.08rem;
   line-height: 1.2;
   letter-spacing: -0.03em;
+}
+
+.hero-month-stat--range {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+.hero-month-stat__value--range {
+  font-size: clamp(0.7rem, 0.86vw, 0.9rem);
+  white-space: nowrap;
+  overflow: hidden;
+  letter-spacing: -0.05em;
+  line-height: 1.14;
+  font-variant-numeric: tabular-nums;
 }
 
 .hero-month-empty {
@@ -756,6 +809,29 @@ th,
 .panel {
   padding: 22px;
   overflow: hidden;
+}
+
+.stage-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+  margin-bottom: 22px;
+}
+
+.stage-grid > .panel,
+.stage-grid > .controls {
+  margin-bottom: 0;
+}
+
+.stage-grid > .panel {
+  min-height: 100%;
+}
+
+.stage-grid .controls {
+  grid-template-columns: 1fr;
+  align-content: start;
+  min-height: 100%;
 }
 
 .page-shell > section.panel + section.panel,
@@ -1168,7 +1244,7 @@ th,
 }
 
 .scene-readout {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .scene-chip {
@@ -1181,6 +1257,10 @@ th,
   display: block;
   min-height: 0;
   padding: 14px 16px;
+}
+
+.scene-chip--horizontal:not(.scene-chip--featured) {
+  min-height: 118px;
 }
 
 .scene-chip__content {
@@ -1208,6 +1288,7 @@ th,
 }
 
 .scene-chip--featured {
+  grid-column: 1 / -1;
   padding-top: 16px;
   padding-bottom: 16px;
 }
@@ -1677,7 +1758,7 @@ tbody tr:hover {
 
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 18px;
 }
 
@@ -1912,7 +1993,7 @@ tbody tr:hover {
 
 .timeline-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 18px;
 }
 
@@ -2147,6 +2228,14 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .stage-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-grid .controls {
+    grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  }
+
   .scene-readout {
     grid-template-columns: 1fr;
   }
@@ -2174,6 +2263,10 @@ tbody tr:hover {
   .hero,
   .content-grid,
   .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-grid .controls {
     grid-template-columns: 1fr;
   }
 

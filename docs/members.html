@@ -40,7 +40,7 @@
         </div>
       </header>
 
-      <header class="hero">
+      <header class="hero hero--compact">
         <div class="hero-copy interactive-card reveal-card" style="--delay: 40ms">
           <div class="hero-kicker-row">
             <p class="eyebrow">Member Atlas</p>
@@ -91,25 +91,27 @@
         </div>
       </header>
 
-      <section class="controls panel interactive-card reveal-card" style="--delay: 220ms">
-        <div class="control">
-          <label for="date-select">查看日期</label>
-          <input id="date-select" type="date" />
-          <p class="control-note" id="date-range-hint">-</p>
-        </div>
-        <div class="control">
-          <label for="person-filter">筛选成员</label>
-          <input id="person-filter" type="search" placeholder="输入成员名、token 名称或模型关键字" />
-        </div>
-      </section>
+      <div class="stage-grid">
+        <section class="controls panel interactive-card reveal-card" style="--delay: 220ms">
+          <div class="control">
+            <label for="date-select">查看日期</label>
+            <input id="date-select" type="date" />
+            <p class="control-note" id="date-range-hint">-</p>
+          </div>
+          <div class="control">
+            <label for="person-filter">筛选成员</label>
+            <input id="person-filter" type="search" placeholder="输入成员名、token 名称或模型关键字" />
+          </div>
+        </section>
 
-      <section class="panel interactive-card reveal-card" style="--delay: 240ms">
-        <div class="section-heading">
-          <h2>成员总览</h2>
-          <p>全周期累计、峰值日和主力模型的汇总卡片。</p>
-        </div>
-        <div id="member-grid" class="catalog-grid"></div>
-      </section>
+        <section class="panel interactive-card reveal-card" style="--delay: 240ms">
+          <div class="section-heading">
+            <h2>成员总览</h2>
+            <p>全周期累计、峰值日和主力模型的汇总卡片。</p>
+          </div>
+          <div id="member-grid" class="catalog-grid"></div>
+        </section>
+      </div>
 
       <section class="content-grid">
         <article class="panel chart-panel interactive-card reveal-card" style="--delay: 280ms">

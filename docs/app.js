@@ -634,12 +634,18 @@ function renderSceneReadout(payload, selectedDay, days) {
     .join("")
 }
 
-function renderReminderBoard() {
+function renderReminderBoard(payload, selectedDay, days) {
   const container = qs("#scene-readout")
 
   if (!container) {
     return
   }
+
+  const balance = buildBalanceSnapshot(payload, days)
+  const topPerson = selectedDay?.people?.[0]
+  const monthRange = selectedDay?.startDate && selectedDay?.endDate
+    ? `${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}`
+    : "等待月份区间"
 
   container.innerHTML = [
     {
@@ -661,10 +667,20 @@ function renderReminderBoard() {
       featured: true,
     },
     {
-      empty: true,
+      label: "Balance Signal",
+      value: currencyFormatter("¥", balance.remainingBalance),
+      note: `${balance.badge} · ${balance.runwayText}`,
+      tone: "scene-chip--watch",
     },
     {
-      empty: true,
+      label: "Month Interval",
+      value: monthRange,
+      note: topPerson
+        ? `${topPerson.displayName} 本月领先 · ${currencyFormatter("¥", topPerson.primaryCost || 0)}`
+        : selectedDay
+          ? `${numberFormatter(selectedDay.requests || 0)} 次请求`
+          : "等待月份数据",
+      tone: "scene-chip--note",
     },
   ]
     .map(
@@ -2698,7 +2714,7 @@ function legacyOldRenderDashboard() {
 
   renderHeroMonthFocus(payload, selectedDay, days)
   renderHeroMarquee(payload, selectedDay, days)
-  renderReminderBoard()
+  renderReminderBoard(payload, selectedDay, days)
   renderSignalDeck(payload, selectedDay, days)
   renderSummaryCards(payload, selectedDay, days)
   renderSelectedDayCards(payload, selectedDay)
@@ -3006,14 +3022,14 @@ function renderHeroMonthFocus(payload, selectedDay, days) {
               <strong>${currencyFormatter(currency.primarySymbol, balance.usedBalance)}</strong>
             </div>
           </div>
-          <div class="hero-month-side-group">
+          <div class="hero-month-side-group hero-month-side-group--range">
             <div class="hero-month-stat">
               <span>使用率</span>
               <strong>${percentFormatter(balance.utilizationRate)}</strong>
             </div>
-            <div class="hero-month-stat">
+            <div class="hero-month-stat hero-month-stat--range">
               <span>统计区间</span>
-              <strong>${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}</strong>
+              <strong class="hero-month-stat__value hero-month-stat__value--range">${formatMonthDayLabel(selectedDay.startDate)} - ${formatMonthDayLabel(selectedDay.endDate)}</strong>
             </div>
           </div>
         </div>
@@ -3757,7 +3773,7 @@ function renderDashboard() {
 
   renderHeroMonthFocus(payload, selectedDay, days)
   renderHeroMarquee(payload, selectedDay, days)
-  renderReminderBoard()
+  renderReminderBoard(payload, selectedDay, days)
   renderSignalDeck(payload, selectedDay, days)
   renderSummaryCards(payload, selectedDay, days)
   renderSelectedDayCards(payload, selectedDay)
