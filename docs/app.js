@@ -987,14 +987,8 @@ function renderWarnings(payload) {
   const panel = qs("#warning-panel")
   const list = qs("#warning-list")
 
-  if (!payload.warnings?.length) {
-    panel.hidden = true
-    list.innerHTML = ""
-    return
-  }
-
-  panel.hidden = false
-  list.innerHTML = payload.warnings.map((warning) => `<li>${warning}</li>`).join("")
+  panel.hidden = true
+  list.innerHTML = ""
 }
 
 function updateDateOptions(payload) {

@@ -1861,8 +1861,11 @@ tbody tr:hover {
 }
 
 .person-name {
+  display: inline-block;
   font-weight: 700;
   color: var(--text);
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .token-list,
