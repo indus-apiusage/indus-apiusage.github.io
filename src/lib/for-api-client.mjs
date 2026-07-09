@@ -1,5 +1,11 @@
 import { toNumber } from "./utils.mjs";
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function parseCookieString(cookieString) {
   const cookies = new Map();
 
@@ -33,6 +39,25 @@ export class ForApiClient {
     this.userId = String(auth.userId || "").trim();
   }
 
+  isTransientFetchError(error) {
+    const code = String(error?.cause?.code || error?.code || "");
+    const message = String(error?.cause?.message || error?.message || "").toLowerCase();
+
+    return (
+      code === "UND_ERR_CONNECT_TIMEOUT" ||
+      code === "ECONNRESET" ||
+      code === "ETIMEDOUT" ||
+      code === "EAI_AGAIN" ||
+      code === "ENOTFOUND" ||
+      message.includes("connect timeout") ||
+      message.includes("headers timeout") ||
+      message.includes("body timeout") ||
+      message.includes("socket error") ||
+      message.includes("fetch failed") ||
+      message.includes("resolving timed out")
+    );
+  }
+
   get cookieHeader() {
     return [...this.cookies.entries()]
       .map(([name, value]) => `${name}=${value}`)
@@ -52,7 +77,7 @@ export class ForApiClient {
     }
   }
 
-  async requestJson(path, { method = "GET", body, authRequired = true, retried = false } = {}) {
+  async requestJson(path, { method = "GET", body, authRequired = true, retried = false, attempt = 1, maxAttempts = 3 } = {}) {
     if (authRequired) {
       await this.ensureAuthenticated();
     }
@@ -73,12 +98,31 @@ export class ForApiClient {
       headers["New-Api-User"] = this.userId;
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      redirect: "manual",
-    });
+    let response;
+
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        redirect: "manual",
+      });
+    } catch (error) {
+      if (this.isTransientFetchError(error) && attempt < maxAttempts) {
+        await sleep(attempt * 1500);
+        return this.requestJson(path, {
+          method,
+          body,
+          authRequired,
+          retried,
+          attempt: attempt + 1,
+          maxAttempts,
+        });
+      }
+
+      const detail = error?.cause?.message || error?.cause?.code || error?.message || "unknown network error";
+      throw new Error(`Network request to ${path} failed: ${detail}`, { cause: error });
+    }
 
     this.rememberCookies(response);
 
@@ -98,6 +142,8 @@ export class ForApiClient {
           body,
           authRequired,
           retried: true,
+          attempt,
+          maxAttempts,
         });
       }
 
@@ -130,6 +176,8 @@ export class ForApiClient {
           body,
           authRequired,
           retried: true,
+          attempt,
+          maxAttempts,
         });
       }
 

@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PID_FILE="${ROOT_DIR}/work/sync-loop.pid"
+LOCK_DIR="${ROOT_DIR}/work/sync-loop.lock"
 LOG_FILE="${ROOT_DIR}/work/sync-loop.log"
 ENV_FILE="${ROOT_DIR}/work/sync.env"
 
@@ -23,17 +24,34 @@ REMOTE_NAME="${SYNC_GIT_REMOTE_NAME:-origin}"
 REMOTE_BRANCH="${SYNC_GIT_REMOTE_BRANCH:-$CURRENT_BRANCH}"
 UPSTREAM_REF="${REMOTE_NAME}/${REMOTE_BRANCH}"
 
-if [ -f "$PID_FILE" ]; then
-  EXISTING_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if [ -n "$EXISTING_PID" ] && kill -0 "$EXISTING_PID" 2>/dev/null; then
-    echo "Sync loop is already running with PID ${EXISTING_PID}." >&2
+acquire_lock() {
+  local existing_pid
+
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    return 0
+  fi
+
+  existing_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+  if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
+    echo "Sync loop is already running with PID ${existing_pid}." >&2
     exit 1
   fi
-fi
 
+  rm -rf "$LOCK_DIR"
+
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "Unable to acquire sync loop lock at ${LOCK_DIR}." >&2
+    exit 1
+  fi
+}
+
+acquire_lock
+
+echo "$$" > "$LOCK_DIR/pid"
 echo "$$" > "$PID_FILE"
 
 cleanup() {
+  rm -rf "$LOCK_DIR"
   rm -f "$PID_FILE"
 }
 
