@@ -1,4 +1,12 @@
+import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+
 import { toNumber } from "./utils.mjs";
+
+const execFileAsync = promisify(execFile);
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -30,6 +38,33 @@ function extractSetCookies(headers) {
   return single ? [single] : [];
 }
 
+function parseCookieJar(cookieText) {
+  const cookies = new Map();
+
+  for (const line of String(cookieText || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const parts = line.split("\t");
+    if (parts.length < 7) {
+      continue;
+    }
+
+    const name = parts[5];
+    const value = parts[6];
+    if (!name) {
+      continue;
+    }
+
+    cookies.set(name, value);
+  }
+
+  return cookies;
+}
+
 export class ForApiClient {
   constructor({ baseUrl, auth }) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -39,23 +74,123 @@ export class ForApiClient {
     this.userId = String(auth.userId || "").trim();
   }
 
+  get proxyUrl() {
+    return (
+      process.env.FOROPENCODE_PROXY ||
+      process.env.HTTPS_PROXY ||
+      process.env.HTTP_PROXY ||
+      process.env.ALL_PROXY ||
+      ""
+    ).trim();
+  }
+
   isTransientFetchError(error) {
     const code = String(error?.cause?.code || error?.code || "");
     const message = String(error?.cause?.message || error?.message || "").toLowerCase();
 
     return (
       code === "UND_ERR_CONNECT_TIMEOUT" ||
+      code === "6" ||
+      code === "7" ||
+      code === "28" ||
+      code === "35" ||
+      code === "52" ||
+      code === "56" ||
       code === "ECONNRESET" ||
       code === "ETIMEDOUT" ||
       code === "EAI_AGAIN" ||
       code === "ENOTFOUND" ||
       message.includes("connect timeout") ||
+      message.includes("connection timed out") ||
       message.includes("headers timeout") ||
       message.includes("body timeout") ||
       message.includes("socket error") ||
       message.includes("fetch failed") ||
-      message.includes("resolving timed out")
+      message.includes("resolving timed out") ||
+      message.includes("failed to connect") ||
+      message.includes("couldn't connect") ||
+      message.includes("could not resolve host") ||
+      message.includes("empty reply from server") ||
+      message.includes("proxy connect aborted")
     );
+  }
+
+  buildCookieJarText() {
+    const hostname = new URL(this.baseUrl).hostname;
+    const lines = ["# Netscape HTTP Cookie File"];
+
+    for (const [name, value] of this.cookies.entries()) {
+      lines.push(`${hostname}\tTRUE\t/\tFALSE\t0\t${name}\t${value}`);
+    }
+
+    return `${lines.join("\n")}\n`;
+  }
+
+  async requestTextViaCurl(url, { method, body, headers }) {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-curl-"));
+    const cookieFile = path.join(tempDir, "cookies.txt");
+
+    await fs.writeFile(cookieFile, this.buildCookieJarText(), "utf8");
+
+    const args = [
+      "--silent",
+      "--show-error",
+      "--compressed",
+      "--max-time",
+      "45",
+      "--connect-timeout",
+      "15",
+      "--request",
+      method,
+      "--cookie",
+      cookieFile,
+      "--cookie-jar",
+      cookieFile,
+      "--write-out",
+      "\n__CURL_STATUS__:%{http_code}",
+    ];
+
+    if (this.proxyUrl) {
+      args.push("--proxy", this.proxyUrl);
+    }
+
+    for (const [name, value] of Object.entries(headers)) {
+      args.push("--header", `${name}: ${value}`);
+    }
+
+    if (body) {
+      args.push("--data-binary", JSON.stringify(body));
+    }
+
+    args.push(url);
+
+    try {
+      const { stdout } = await execFileAsync("curl", args, {
+        maxBuffer: 10 * 1024 * 1024,
+      });
+
+      const marker = "\n__CURL_STATUS__:";
+      const markerIndex = stdout.lastIndexOf(marker);
+
+      if (markerIndex === -1) {
+        throw new Error("Curl response did not include an HTTP status marker.");
+      }
+
+      const bodyText = stdout.slice(0, markerIndex);
+      const status = Number(stdout.slice(markerIndex + marker.length).trim());
+      const updatedCookies = parseCookieJar(await fs.readFile(cookieFile, "utf8"));
+      this.cookies = updatedCookies;
+
+      return {
+        status,
+        text: bodyText,
+      };
+    } catch (error) {
+      const detail = error?.stderr?.trim() || error?.message || "curl request failed";
+      throw new Error(`Network request to ${new URL(url).pathname} failed: ${detail}`, { cause: error });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   }
 
   get cookieHeader() {
@@ -98,15 +233,30 @@ export class ForApiClient {
       headers["New-Api-User"] = this.userId;
     }
 
-    let response;
+    let status;
+    let text;
 
     try {
-      response = await fetch(`${this.baseUrl}${path}`, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        redirect: "manual",
-      });
+      if (this.proxyUrl) {
+        const curlResponse = await this.requestTextViaCurl(`${this.baseUrl}${path}`, {
+          method,
+          body,
+          headers,
+        });
+        status = curlResponse.status;
+        text = curlResponse.text;
+      } else {
+        const response = await fetch(`${this.baseUrl}${path}`, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          redirect: "manual",
+        });
+
+        this.rememberCookies(response);
+        status = response.status;
+        text = await response.text();
+      }
     } catch (error) {
       if (this.isTransientFetchError(error) && attempt < maxAttempts) {
         await sleep(attempt * 1500);
@@ -124,9 +274,7 @@ export class ForApiClient {
       throw new Error(`Network request to ${path} failed: ${detail}`, { cause: error });
     }
 
-    this.rememberCookies(response);
-
-    if (response.status >= 300 && response.status < 400) {
+    if (status >= 300 && status < 400) {
       const canRetryWithCredentials =
         authRequired &&
         !retried &&
@@ -149,8 +297,6 @@ export class ForApiClient {
 
       throw new Error(`Unexpected redirect while requesting ${path}. A valid session cookie is probably required.`);
     }
-
-    const text = await response.text();
     let json;
 
     try {
@@ -159,8 +305,8 @@ export class ForApiClient {
       throw new Error(`Expected JSON from ${path}, received: ${text.slice(0, 200)}`);
     }
 
-    if (response.status === 401) {
-      const message = json?.message || response.statusText;
+    if (status === 401) {
+      const message = json?.message || "Unauthorized";
       const canRetryWithCredentials =
         authRequired &&
         !retried &&
@@ -190,8 +336,8 @@ export class ForApiClient {
       throw new Error(`Authentication failed for ${path}: ${message}`);
     }
 
-    if (!response.ok) {
-      throw new Error(`Request to ${path} failed: ${json?.message || response.statusText}`);
+    if (status < 200 || status >= 300) {
+      throw new Error(`Request to ${path} failed: ${json?.message || `HTTP ${status}`}`);
     }
 
     return json;
