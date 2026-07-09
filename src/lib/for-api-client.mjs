@@ -65,6 +65,61 @@ function parseCookieJar(cookieText) {
   return cookies;
 }
 
+function buildCurlArgs({
+  url,
+  method,
+  body,
+  headers,
+  cookieFile,
+  proxyUrl,
+  forceHttp11 = false,
+}) {
+  const args = [
+    "--silent",
+    "--show-error",
+    "--compressed",
+    "--max-time",
+    "45",
+    "--connect-timeout",
+    "15",
+    "--retry",
+    "3",
+    "--retry-delay",
+    "2",
+    "--retry-all-errors",
+    "--retry-connrefused",
+    "--ipv4",
+    "--request",
+    method,
+    "--cookie",
+    cookieFile,
+    "--cookie-jar",
+    cookieFile,
+    "--write-out",
+    "\n__CURL_STATUS__:%{http_code}",
+  ];
+
+  if (forceHttp11) {
+    args.push("--http1.1");
+  }
+
+  if (proxyUrl) {
+    args.push("--proxy", proxyUrl);
+  }
+
+  for (const [name, value] of Object.entries(headers)) {
+    args.push("--header", `${name}: ${value}`);
+  }
+
+  if (body) {
+    args.push("--data-binary", JSON.stringify(body));
+  }
+
+  args.push(url);
+
+  return args;
+}
+
 export class ForApiClient {
   constructor({ baseUrl, auth }) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -131,63 +186,72 @@ export class ForApiClient {
     const cookieFile = path.join(tempDir, "cookies.txt");
 
     await fs.writeFile(cookieFile, this.buildCookieJarText(), "utf8");
-
-    const args = [
-      "--silent",
-      "--show-error",
-      "--compressed",
-      "--max-time",
-      "45",
-      "--connect-timeout",
-      "15",
-      "--request",
-      method,
-      "--cookie",
-      cookieFile,
-      "--cookie-jar",
-      cookieFile,
-      "--write-out",
-      "\n__CURL_STATUS__:%{http_code}",
+    const variants = [
+      { proxyUrl: this.proxyUrl, forceHttp11: false, label: this.proxyUrl ? "proxy" : "direct" },
     ];
 
     if (this.proxyUrl) {
-      args.push("--proxy", this.proxyUrl);
+      variants.push(
+        { proxyUrl: this.proxyUrl, forceHttp11: true, label: "proxy-http1.1" },
+        { proxyUrl: "", forceHttp11: false, label: "direct-fallback" },
+      );
     }
 
-    for (const [name, value] of Object.entries(headers)) {
-      args.push("--header", `${name}: ${value}`);
-    }
-
-    if (body) {
-      args.push("--data-binary", JSON.stringify(body));
-    }
-
-    args.push(url);
+    let lastError;
 
     try {
-      const { stdout } = await execFileAsync("curl", args, {
-        maxBuffer: 10 * 1024 * 1024,
-      });
+      for (const variant of variants) {
+        try {
+          const { stdout } = await execFileAsync(
+            "curl",
+            buildCurlArgs({
+              url,
+              method,
+              body,
+              headers,
+              cookieFile,
+              proxyUrl: variant.proxyUrl,
+              forceHttp11: variant.forceHttp11,
+            }),
+            {
+              maxBuffer: 10 * 1024 * 1024,
+            },
+          );
 
-      const marker = "\n__CURL_STATUS__:";
-      const markerIndex = stdout.lastIndexOf(marker);
+          const marker = "\n__CURL_STATUS__:";
+          const markerIndex = stdout.lastIndexOf(marker);
 
-      if (markerIndex === -1) {
-        throw new Error("Curl response did not include an HTTP status marker.");
+          if (markerIndex === -1) {
+            throw new Error("Curl response did not include an HTTP status marker.");
+          }
+
+          const bodyText = stdout.slice(0, markerIndex);
+          const status = Number(stdout.slice(markerIndex + marker.length).trim());
+          const updatedCookies = parseCookieJar(await fs.readFile(cookieFile, "utf8"));
+          this.cookies = updatedCookies;
+
+          return {
+            status,
+            text: bodyText,
+          };
+        } catch (error) {
+          const detail = error?.stderr?.trim() || error?.message || "curl request failed";
+          const hint =
+            variant.proxyUrl && variant.proxyUrl === this.proxyUrl
+              ? ` (proxy: ${variant.proxyUrl}, mode: ${variant.label})`
+              : ` (mode: ${variant.label})`;
+          lastError = new Error(
+            `Network request to ${new URL(url).pathname} failed${hint}: ${detail}`,
+            { cause: error },
+          );
+
+          if (!this.isTransientFetchError(error)) {
+            break;
+          }
+        }
       }
 
-      const bodyText = stdout.slice(0, markerIndex);
-      const status = Number(stdout.slice(markerIndex + marker.length).trim());
-      const updatedCookies = parseCookieJar(await fs.readFile(cookieFile, "utf8"));
-      this.cookies = updatedCookies;
-
-      return {
-        status,
-        text: bodyText,
-      };
-    } catch (error) {
-      const detail = error?.stderr?.trim() || error?.message || "curl request failed";
-      throw new Error(`Network request to ${new URL(url).pathname} failed: ${detail}`, { cause: error });
+      throw lastError ?? new Error(`Network request to ${new URL(url).pathname} failed.`);
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
