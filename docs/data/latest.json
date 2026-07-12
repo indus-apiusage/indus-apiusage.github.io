@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-12T06:26:11.920Z",
+  "generatedAt": "2026-07-12T06:39:04.238Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -46,9 +46,9 @@
   },
   "summary": {
     "totalDays": 19,
-    "totalRequests": 20751,
-    "totalRawQuota": 66995034,
-    "totalPrimaryCost": 133.990068,
+    "totalRequests": 20759,
+    "totalRawQuota": 67014871,
+    "totalPrimaryCost": 134.029742,
     "totalSecondaryCost": 0,
     "activePeople": 3,
     "activeTokens": 3,
@@ -2037,13 +2037,13 @@
     },
     {
       "date": "2026-07-12",
-      "requests": 122,
-      "rawQuota": 609486,
-      "primaryCost": 1.218972,
+      "requests": 130,
+      "rawQuota": 629323,
+      "primaryCost": 1.258646,
       "secondaryCost": 0,
-      "promptTokens": 17616036,
-      "completionTokens": 95995,
-      "cacheReadTokens": 16497664,
+      "promptTokens": 17947610,
+      "completionTokens": 98133,
+      "cacheReadTokens": 16704000,
       "cacheWriteTokens": 0,
       "people": [
         {
@@ -2089,6 +2089,32 @@
               "completionTokens": 78
             }
           ]
+        },
+        {
+          "personId": "cjy",
+          "displayName": "陈俊宇",
+          "tokenNames": [
+            "cjy"
+          ],
+          "requests": 8,
+          "rawQuota": 19837,
+          "primaryCost": 0.039674,
+          "secondaryCost": 0,
+          "promptTokens": 331574,
+          "completionTokens": 2138,
+          "cacheReadTokens": 206336,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-5.6-terra",
+              "requests": 8,
+              "rawQuota": 19837,
+              "primaryCost": 0.039674,
+              "secondaryCost": 0,
+              "promptTokens": 331574,
+              "completionTokens": 2138
+            }
+          ]
         }
       ],
       "models": [
@@ -2103,12 +2129,12 @@
         },
         {
           "name": "gpt-5.6-terra",
-          "requests": 43,
-          "rawQuota": 225231,
-          "primaryCost": 0.450462,
+          "requests": 51,
+          "rawQuota": 245068,
+          "primaryCost": 0.490136,
           "secondaryCost": 0,
-          "promptTokens": 8052486,
-          "completionTokens": 39799
+          "promptTokens": 8384060,
+          "completionTokens": 41937
         },
         {
           "name": "gpt-5.4-mini",
@@ -3117,16 +3143,38 @@
         "cjy"
       ],
       "totals": {
-        "requests": 1728,
-        "rawQuota": 3250155,
-        "primaryCost": 6.50031,
+        "requests": 1736,
+        "rawQuota": 3269992,
+        "primaryCost": 6.539984,
         "secondaryCost": 0,
-        "promptTokens": 188955735,
-        "completionTokens": 870989,
-        "cacheReadTokens": 176348672,
+        "promptTokens": 189287309,
+        "completionTokens": 873127,
+        "cacheReadTokens": 176555008,
         "cacheWriteTokens": 0
       },
       "days": [
+        {
+          "date": "2026-07-12",
+          "requests": 8,
+          "rawQuota": 19837,
+          "primaryCost": 0.039674,
+          "secondaryCost": 0,
+          "promptTokens": 331574,
+          "completionTokens": 2138,
+          "cacheReadTokens": 206336,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-5.6-terra",
+              "requests": 8,
+              "rawQuota": 19837,
+              "primaryCost": 0.039674,
+              "secondaryCost": 0,
+              "promptTokens": 331574,
+              "completionTokens": 2138
+            }
+          ]
+        },
         {
           "date": "2026-07-10",
           "requests": 157,
@@ -4722,6 +4770,33 @@
           "secondaryCost": 0,
           "promptTokens": 5735,
           "completionTokens": 78
+        }
+      ]
+    },
+    {
+      "date": "2026-07-12",
+      "personId": "cjy",
+      "displayName": "陈俊宇",
+      "tokenNames": [
+        "cjy"
+      ],
+      "requests": 8,
+      "rawQuota": 19837,
+      "primaryCost": 0.039674,
+      "secondaryCost": 0,
+      "promptTokens": 331574,
+      "completionTokens": 2138,
+      "cacheReadTokens": 206336,
+      "cacheWriteTokens": 0,
+      "models": [
+        {
+          "name": "gpt-5.6-terra",
+          "requests": 8,
+          "rawQuota": 19837,
+          "primaryCost": 0.039674,
+          "secondaryCost": 0,
+          "promptTokens": 331574,
+          "completionTokens": 2138
         }
       ]
     }
