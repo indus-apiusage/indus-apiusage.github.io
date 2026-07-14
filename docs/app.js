@@ -3048,6 +3048,12 @@ function renderHeroMarquee(payload, selectedDay, days) {
 function renderHeroMonthFocus(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const balance = buildBalanceSnapshot(payload, days)
+  const rawGptPlusRatio = payload?.status?.gptPlus?.ratio
+  const gptPlusRatio =
+    rawGptPlusRatio === null || rawGptPlusRatio === undefined || rawGptPlusRatio === ""
+      ? Number.NaN
+      : Number(rawGptPlusRatio)
+  const hasGptPlusRatio = Number.isFinite(gptPlusRatio)
   const focus = qs("#hero-month-focus")
 
   if (!focus) {
@@ -3073,6 +3079,14 @@ function renderHeroMonthFocus(payload, selectedDay, days) {
             </div>
             <strong class="hero-month-value hero-month-value--balance">${currencyFormatter(currency.primarySymbol, balance.remainingBalance)}</strong>
             <p>${balance.runwayText}</p>
+          </div>
+          <div class="hero-month-primary hero-month-primary--panel hero-month-primary--gpt-plus">
+            <div class="hero-month-primary-head">
+              <span class="hero-month-label">GPT+ 分组倍率</span>
+              <em class="hero-month-pill hero-month-pill--gpt-plus">${hasGptPlusRatio ? "实时同步" : "等待同步"}</em>
+            </div>
+            <strong class="hero-month-value hero-month-value--ratio">${hasGptPlusRatio ? `${gptPlusRatio.toFixed(2)}×` : "—"}</strong>
+            <p>${hasGptPlusRatio ? "来自 ForOpenCode 的 gpt_plus 分组当前倍率。" : "下次同步后会显示 gpt_plus 分组倍率。"}</p>
           </div>
         </div>
         <div class="hero-month-side">

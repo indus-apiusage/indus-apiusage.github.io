@@ -415,6 +415,10 @@ export class ForApiClient {
     return this.requestJson("/api/user/self");
   }
 
+  async fetchSelfGroups() {
+    return this.requestJson("/api/user/self/groups");
+  }
+
   async login() {
     if (this.cookies.size > 0 || this.hasLoggedIn) {
       return;

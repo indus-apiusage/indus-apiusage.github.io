@@ -32,6 +32,12 @@ test("buildDashboardPayload groups usage by configured token owner", () => {
       display_name: "Alice",
       group: "default",
     },
+    groups: {
+      gpt_plus: {
+        desc: "gpt_plus专用分组",
+        ratio: 0.1,
+      },
+    },
     dayResults: [
       {
         date: "2026-07-01",
@@ -70,6 +76,9 @@ test("buildDashboardPayload groups usage by configured token owner", () => {
   assert.equal(payload.account.remainingPrimaryBalance, 1.5);
   assert.equal(payload.account.usedPrimaryCost, 1);
   assert.equal(payload.account.utilizationRate, 0.4);
+  assert.equal(payload.status.gptPlus.key, "gpt_plus");
+  assert.equal(payload.status.gptPlus.ratio, 0.1);
+  assert.equal(payload.status.gptPlus.description, "gpt_plus专用分组");
   assert.equal(payload.people.length, 2);
   assert.equal(payload.people[0].displayName, "unknown-key");
   assert.equal(payload.people[1].displayName, "Alice");

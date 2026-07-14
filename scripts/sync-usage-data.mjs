@@ -52,6 +52,8 @@ async function main() {
   const status = statusResponse?.data ?? {};
   const selfResponse = await client.fetchSelf();
   const account = selfResponse?.data ?? {};
+  const groupsResponse = await client.fetchSelfGroups();
+  const groups = groupsResponse?.data ?? {};
 
   if (hasFlag("--placeholder")) {
     const placeholder = createPlaceholderPayload({
@@ -60,6 +62,7 @@ async function main() {
       timeZone: runtime.timeZone,
       status,
       account,
+      groups,
     });
 
     await writeJson(outputPath, placeholder);
@@ -93,6 +96,7 @@ async function main() {
     config: runtime,
     status,
     account,
+    groups,
   });
 
   await writeJson(outputPath, payload);

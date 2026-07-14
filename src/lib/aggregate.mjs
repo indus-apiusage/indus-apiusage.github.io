@@ -62,6 +62,17 @@ function buildAccountSnapshot(account, currency) {
   };
 }
 
+function buildGptPlusSnapshot(groups) {
+  const group = groups?.gpt_plus ?? {};
+  const ratio = toNumber(group?.ratio, Number.NaN);
+
+  return {
+    key: "gpt_plus",
+    ratio: Number.isFinite(ratio) ? ratio : null,
+    description: String(group?.desc || ""),
+  };
+}
+
 function createMapper(peopleConfig) {
   const lookup = new Map();
 
@@ -196,7 +207,7 @@ export function buildDayWindow(date, timeZone) {
   };
 }
 
-export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, account }) {
+export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, account, groups }) {
   const currency = buildCurrencyStatus(status ?? {});
 
   return {
@@ -217,6 +228,7 @@ export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, acc
       customCurrencySymbol: currency.customCurrencySymbol,
       customCurrencyExchangeRate: currency.customCurrencyExchangeRate,
       version: status?.version || "unknown",
+      gptPlus: buildGptPlusSnapshot(groups),
     },
     currency: {
       displayInCurrency: currency.displayInCurrency,
@@ -249,7 +261,7 @@ export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, acc
   };
 }
 
-export function buildDashboardPayload({ dayResults, config, status, account }) {
+export function buildDashboardPayload({ dayResults, config, status, account, groups }) {
   const currency = buildCurrencyStatus(status ?? {});
   const mapPerson = createMapper(config.people);
 
@@ -432,6 +444,7 @@ export function buildDashboardPayload({ dayResults, config, status, account }) {
       customCurrencySymbol: currency.customCurrencySymbol,
       customCurrencyExchangeRate: currency.customCurrencyExchangeRate,
       version: status?.version || "unknown",
+      gptPlus: buildGptPlusSnapshot(groups),
     },
     currency: {
       displayInCurrency: currency.displayInCurrency,

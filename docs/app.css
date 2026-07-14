@@ -574,8 +574,8 @@ th,
 
 .hero-month-metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 14px;
   margin-top: 18px;
 }
 
@@ -594,6 +594,17 @@ th,
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 90%),
     rgba(255, 255, 255, 0.028);
+}
+
+.hero-month-primary--gpt-plus {
+  border-color: rgba(var(--pink-rgb), 0.24);
+  background:
+    radial-gradient(circle at 78% 18%, rgba(var(--pink-rgb), 0.24), transparent 42%),
+    radial-gradient(circle at 14% 88%, rgba(var(--blue-rgb), 0.2), transparent 48%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 30px rgba(var(--pink-rgb), 0.09);
 }
 
 .hero-month-primary-head {
@@ -637,6 +648,12 @@ th,
   background: rgba(255, 92, 140, 0.12);
 }
 
+.hero-month-pill--gpt-plus {
+  color: rgba(255, 228, 245, 0.98);
+  border-color: rgba(var(--pink-rgb), 0.3);
+  background: linear-gradient(135deg, rgba(var(--pink-rgb), 0.22), rgba(var(--blue-rgb), 0.16));
+}
+
 .hero-month-label {
   color: var(--muted);
   font-family: "JetBrains Mono", monospace;
@@ -672,6 +689,14 @@ th,
 
 .hero-month-primary strong.hero-month-value--balance {
   font-size: clamp(1.28rem, 2.46vw, 2.36rem);
+}
+
+.hero-month-primary strong.hero-month-value--ratio {
+  color: rgba(255, 232, 246, 0.98);
+  font-size: clamp(1.7rem, 3.2vw, 2.8rem);
+  text-shadow:
+    0 0 26px rgba(var(--pink-rgb), 0.34),
+    0 0 42px rgba(var(--blue-rgb), 0.16);
 }
 
 .hero-month-primary p,
