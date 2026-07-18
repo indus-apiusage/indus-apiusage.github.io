@@ -9,8 +9,10 @@ const DEFAULT_BASE_URL = "https://www.foropencode.com";
 const DEFAULT_SCOPE = "self";
 const DEFAULT_TIMEZONE = "Asia/Shanghai";
 const DEFAULT_LOOKBACK_DAYS = 30;
+const DEFAULT_REFRESH_DAYS = 2;
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_OUTPUT_FILE = "docs/data/latest.json";
+const DEFAULT_CACHE_FILE = "work/usage-log-cache.json";
 
 async function readOptionalJson(filePath) {
   try {
@@ -45,6 +47,12 @@ function resolveLookbackDays(envValue, fileValue) {
 function resolvePageSize(envValue, fileValue) {
   const candidate = Number(envValue ?? fileValue ?? DEFAULT_PAGE_SIZE);
   return Number.isFinite(candidate) && candidate > 0 ? Math.floor(candidate) : DEFAULT_PAGE_SIZE;
+}
+
+function resolveRefreshDays(envValue, fileValue, lookbackDays) {
+  const candidate = Number(envValue ?? fileValue ?? DEFAULT_REFRESH_DAYS);
+  const resolved = Number.isFinite(candidate) && candidate > 0 ? Math.floor(candidate) : DEFAULT_REFRESH_DAYS;
+  return Math.min(resolved, lookbackDays);
 }
 
 function resolveScope(envValue, fileValue) {
@@ -100,6 +108,7 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
 
   const timeZone = resolveTimezone(env.USAGE_TIMEZONE, fileConfig.timezone);
   const lookbackDays = resolveLookbackDays(env.USAGE_LOOKBACK_DAYS, fileConfig.lookbackDays);
+  const refreshDays = resolveRefreshDays(env.USAGE_REFRESH_DAYS, fileConfig.refreshDays, lookbackDays);
   const startDate = resolveDate(env.USAGE_START_DATE, timeZone);
   const endDate = resolveDate(env.USAGE_END_DATE, timeZone);
 
@@ -109,10 +118,12 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     scope: resolveScope(env.FOROPENCODE_SCOPE, fileConfig.scope),
     timeZone,
     lookbackDays,
+    refreshDays,
     startDate,
     endDate,
     pageSize: resolvePageSize(env.USAGE_PAGE_SIZE, fileConfig.pageSize),
     outputFile: env.OUTPUT_FILE || fileConfig.outputFile || DEFAULT_OUTPUT_FILE,
+    cacheFile: env.USAGE_CACHE_FILE || fileConfig.cacheFile || DEFAULT_CACHE_FILE,
     auth: {
       cookie: env.FOROPENCODE_COOKIE || "",
       userId: env.FOROPENCODE_USER_ID || env.FOROPENCODE_NEW_API_USER || "",

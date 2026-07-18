@@ -261,133 +261,127 @@ export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, acc
   };
 }
 
-export function buildDashboardPayload({ dayResults, config, status, account, groups }) {
+export function buildDailyUsageSnapshot({ date, logs, config, status }) {
   const currency = buildCurrencyStatus(status ?? {});
   const mapPerson = createMapper(config.people);
+  const personMap = new Map();
+  const modelMap = new Map();
+  const dayTotals = createMetricAccumulator();
 
+  for (const log of (Array.isArray(logs) ? logs : []).filter((entry) => toNumber(entry.type) === 2)) {
+    const identity = mapPerson(log.token_name);
+    const modelName = String(log.model_name || "Unknown Model");
+    const metrics = deriveLogMetrics(log, currency);
+
+    mergeMetrics(dayTotals, metrics);
+
+    if (!personMap.has(identity.personId)) {
+      personMap.set(identity.personId, {
+        personId: identity.personId,
+        displayName: identity.displayName,
+        tokenNames: [],
+        metrics: createMetricAccumulator(),
+        modelMap: new Map(),
+      });
+    }
+
+    const personEntry = personMap.get(identity.personId);
+    personEntry.tokenNames.push(identity.tokenName);
+    mergeMetrics(personEntry.metrics, metrics);
+
+    if (!personEntry.modelMap.has(modelName)) {
+      personEntry.modelMap.set(modelName, {
+        name: modelName,
+        metrics: createMetricAccumulator(),
+      });
+    }
+
+    mergeMetrics(personEntry.modelMap.get(modelName).metrics, metrics);
+
+    if (!modelMap.has(modelName)) {
+      modelMap.set(modelName, {
+        name: modelName,
+        metrics: createMetricAccumulator(),
+      });
+    }
+
+    mergeMetrics(modelMap.get(modelName).metrics, metrics);
+  }
+
+  const people = [...personMap.values()]
+    .map((entry) => ({
+      personId: entry.personId,
+      displayName: entry.displayName,
+      tokenNames: unique(entry.tokenNames),
+      requests: entry.metrics.requests,
+      rawQuota: entry.metrics.rawQuota,
+      primaryCost: Number(entry.metrics.primaryCost.toFixed(6)),
+      secondaryCost: Number(entry.metrics.secondaryCost.toFixed(6)),
+      promptTokens: entry.metrics.promptTokens,
+      completionTokens: entry.metrics.completionTokens,
+      cacheReadTokens: entry.metrics.cacheReadTokens,
+      cacheWriteTokens: entry.metrics.cacheWriteTokens,
+      models: finalizeModelMap(entry.modelMap),
+    }))
+    .sort((left, right) => right.primaryCost - left.primaryCost || right.requests - left.requests);
+
+  return {
+    date,
+    requests: dayTotals.requests,
+    rawQuota: dayTotals.rawQuota,
+    primaryCost: Number(dayTotals.primaryCost.toFixed(6)),
+    secondaryCost: Number(dayTotals.secondaryCost.toFixed(6)),
+    promptTokens: dayTotals.promptTokens,
+    completionTokens: dayTotals.completionTokens,
+    cacheReadTokens: dayTotals.cacheReadTokens,
+    cacheWriteTokens: dayTotals.cacheWriteTokens,
+    people,
+    models: finalizeModelMap(modelMap),
+  };
+}
+
+export function buildDashboardPayloadFromDays({ days: sourceDays, config, status, account, groups }) {
+  const currency = buildCurrencyStatus(status ?? {});
   const peopleMap = new Map();
   const warnings = [];
+  const days = trimLeadingEmptyDays(sortByDateAsc(Array.isArray(sourceDays) ? sourceDays : []));
 
-  const days = trimLeadingEmptyDays(
-    sortByDateAsc(
-    dayResults.map(({ date, logs }) => {
-      const personMap = new Map();
-      const modelMap = new Map();
-      const dayTotals = createMetricAccumulator();
-
-      for (const log of logs.filter((entry) => toNumber(entry.type) === 2)) {
-        const identity = mapPerson(log.token_name);
-        const modelName = String(log.model_name || "Unknown Model");
-        const metrics = deriveLogMetrics(log, currency);
-
-        mergeMetrics(dayTotals, metrics);
-
-        if (!personMap.has(identity.personId)) {
-          personMap.set(identity.personId, {
-            personId: identity.personId,
-            displayName: identity.displayName,
-            tokenNames: [],
-            metrics: createMetricAccumulator(),
-            modelMap: new Map(),
-          });
-        }
-
-        const personEntry = personMap.get(identity.personId);
-        personEntry.tokenNames.push(identity.tokenName);
-        mergeMetrics(personEntry.metrics, metrics);
-
-        if (!personEntry.modelMap.has(modelName)) {
-          personEntry.modelMap.set(modelName, {
-            name: modelName,
-            metrics: createMetricAccumulator(),
-          });
-        }
-
-        mergeMetrics(personEntry.modelMap.get(modelName).metrics, metrics);
-
-        if (!modelMap.has(modelName)) {
-          modelMap.set(modelName, {
-            name: modelName,
-            metrics: createMetricAccumulator(),
-          });
-        }
-
-        mergeMetrics(modelMap.get(modelName).metrics, metrics);
-      }
-
-      const people = [...personMap.values()]
-        .map((entry) => {
-          const topModels = finalizeModelMap(entry.modelMap);
-          return {
-            personId: entry.personId,
-            displayName: entry.displayName,
-            tokenNames: unique(entry.tokenNames),
-            requests: entry.metrics.requests,
-            rawQuota: entry.metrics.rawQuota,
-            primaryCost: Number(entry.metrics.primaryCost.toFixed(6)),
-            secondaryCost: Number(entry.metrics.secondaryCost.toFixed(6)),
-            promptTokens: entry.metrics.promptTokens,
-            completionTokens: entry.metrics.completionTokens,
-            cacheReadTokens: entry.metrics.cacheReadTokens,
-            cacheWriteTokens: entry.metrics.cacheWriteTokens,
-            models: topModels,
-          };
-        })
-        .sort((left, right) => right.primaryCost - left.primaryCost || right.requests - left.requests);
-
-      for (const entry of people) {
-        if (!peopleMap.has(entry.personId)) {
-          peopleMap.set(entry.personId, {
-            personId: entry.personId,
-            displayName: entry.displayName,
-            tokenNames: new Set(),
-            totals: createMetricAccumulator(),
-            days: [],
-          });
-        }
-
-        const person = peopleMap.get(entry.personId);
-        entry.tokenNames.forEach((tokenName) => person.tokenNames.add(tokenName));
-        mergeMetrics(person.totals, entry);
-        person.days.push({
-          date,
-          requests: entry.requests,
-          rawQuota: entry.rawQuota,
-          primaryCost: entry.primaryCost,
-          secondaryCost: entry.secondaryCost,
-          promptTokens: entry.promptTokens,
-          completionTokens: entry.completionTokens,
-          cacheReadTokens: entry.cacheReadTokens,
-          cacheWriteTokens: entry.cacheWriteTokens,
-          models: entry.models,
+  for (const day of days) {
+    for (const entry of day.people || []) {
+      if (!peopleMap.has(entry.personId)) {
+        peopleMap.set(entry.personId, {
+          personId: entry.personId,
+          displayName: entry.displayName,
+          tokenNames: new Set(),
+          totals: createMetricAccumulator(),
+          days: [],
         });
       }
 
-      for (const entry of people) {
-        for (const tokenName of entry.tokenNames) {
-          const matched = config.people.find((person) => person.tokenNames.includes(tokenName));
-          if (!matched) {
-            warnings.push(`Token "${tokenName}" is not mapped in config/people.json and will be shown as-is.`);
-          }
+      const person = peopleMap.get(entry.personId);
+      entry.tokenNames.forEach((tokenName) => person.tokenNames.add(tokenName));
+      mergeMetrics(person.totals, entry);
+      person.days.push({
+        date: day.date,
+        requests: entry.requests,
+        rawQuota: entry.rawQuota,
+        primaryCost: entry.primaryCost,
+        secondaryCost: entry.secondaryCost,
+        promptTokens: entry.promptTokens,
+        completionTokens: entry.completionTokens,
+        cacheReadTokens: entry.cacheReadTokens,
+        cacheWriteTokens: entry.cacheWriteTokens,
+        models: entry.models,
+      });
+
+      for (const tokenName of entry.tokenNames) {
+        const matched = config.people.find((personConfig) => personConfig.tokenNames.includes(tokenName));
+        if (!matched) {
+          warnings.push(`Token "${tokenName}" is not mapped in config/people.json and will be shown as-is.`);
         }
       }
-
-      return {
-        date,
-        requests: dayTotals.requests,
-        rawQuota: dayTotals.rawQuota,
-        primaryCost: Number(dayTotals.primaryCost.toFixed(6)),
-        secondaryCost: Number(dayTotals.secondaryCost.toFixed(6)),
-        promptTokens: dayTotals.promptTokens,
-        completionTokens: dayTotals.completionTokens,
-        cacheReadTokens: dayTotals.cacheReadTokens,
-        cacheWriteTokens: dayTotals.cacheWriteTokens,
-        people,
-        models: finalizeModelMap(modelMap),
-      };
-    }),
-    ),
-  );
+    }
+  }
 
   const people = [...peopleMap.values()]
     .map((entry) => ({
@@ -473,4 +467,12 @@ export function buildDashboardPayload({ dayResults, config, status, account, gro
     dailyPersonRows,
     warnings: unique(warnings),
   };
+}
+
+export function buildDashboardPayload({ dayResults, config, status, account, groups }) {
+  const days = dayResults.map(({ date, logs }) =>
+    buildDailyUsageSnapshot({ date, logs, config, status }),
+  );
+
+  return buildDashboardPayloadFromDays({ days, config, status, account, groups });
 }

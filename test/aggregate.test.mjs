@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDashboardPayload } from "../src/lib/aggregate.mjs";
+import { buildDashboardPayload, buildDashboardPayloadFromDays } from "../src/lib/aggregate.mjs";
 
 test("buildDashboardPayload groups usage by configured token owner", () => {
   const payload = buildDashboardPayload({
@@ -135,4 +135,46 @@ test("buildDashboardPayload trims leading empty days before the first request", 
     start: "2026-06-04",
     end: "2026-06-04",
   });
+});
+
+test("buildDashboardPayloadFromDays rebuilds totals from cached daily snapshots", () => {
+  const config = {
+    baseUrl: "https://www.foropencode.com",
+    scope: "self",
+    timeZone: "Asia/Shanghai",
+    lookbackDays: 2,
+    people: [],
+  };
+  const status = { quota_per_unit: 500000 };
+  const original = buildDashboardPayload({
+    config,
+    status,
+    dayResults: [
+      {
+        date: "2026-07-01",
+        logs: [
+          {
+            id: 1,
+            type: 2,
+            token_name: "cjh",
+            model_name: "gpt-5",
+            quota: 500000,
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            other: "{}",
+          },
+        ],
+      },
+    ],
+  });
+
+  const rebuilt = buildDashboardPayloadFromDays({
+    days: original.days,
+    config,
+    status,
+  });
+
+  assert.equal(rebuilt.summary.totalRequests, 1);
+  assert.equal(rebuilt.summary.totalPrimaryCost, 1);
+  assert.deepEqual(rebuilt.days, original.days);
 });

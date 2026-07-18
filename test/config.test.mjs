@@ -19,6 +19,22 @@ test("loadRuntimeConfig reads FOROPENCODE_USER_ID for New-Api-User auth", async 
 
   assert.equal(runtime.auth.cookie, "session=example");
   assert.equal(runtime.auth.userId, "1143");
+  assert.equal(runtime.refreshDays, 2);
+});
+
+test("loadRuntimeConfig limits the refresh window to the configured lookback", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-config-refresh-"));
+
+  const runtime = await loadRuntimeConfig({
+    cwd,
+    env: {
+      USAGE_LOOKBACK_DAYS: "4",
+      USAGE_REFRESH_DAYS: "10",
+    },
+  });
+
+  assert.equal(runtime.lookbackDays, 4);
+  assert.equal(runtime.refreshDays, 4);
 });
 
 test("loadRuntimeConfig falls back to committed repo mapping config", async () => {

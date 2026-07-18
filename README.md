@@ -14,6 +14,7 @@ ForOpenCode Usage Dashboard
 - `scripts/sync-and-push.sh`: 同步后按需提交并推送到 GitHub。
 - `src/lib/for-api-client.mjs`: 认证、分页抓取、接口请求。
 - `src/lib/aggregate.mjs`: 日级聚合、成员映射、额度换算。
+- `work/usage-log-cache.json`: 本地原始日志缓存，常规同步只刷新最近日期以提升速度。
 - `config/people.example.json`: 成员映射配置示例。
 - `config/people.repo.json`: 可提交到仓库、供 GitHub Actions 使用的成员映射。
 - `docs/`: GitHub Pages 静态站点。
@@ -73,6 +74,7 @@ cp config/people.example.json config/people.json
 {
   "timezone": "Asia/Shanghai",
   "lookbackDays": 30,
+  "refreshDays": 2,
   "people": [
     {
       "displayName": "Alice",
@@ -124,6 +126,12 @@ export FOROPENCODE_TURNSTILE_TOKEN='...'
 npm run sync
 ```
 
+同步优先复用已有 `docs/data/latest.json` 中的历史日聚合，并把新抓取的原始日志保存在 `work/usage-log-cache.json`。因此常规运行默认只重新抓取今天和昨天；当本地没有历史 dashboard 数据时，才会补齐完整回看区间。如需强制全量重建，可运行：
+
+```bash
+npm run sync -- --refresh-all
+```
+
 如果你希望抓取完成后自动提交并推送当前变更：
 
 ```bash
@@ -159,6 +167,10 @@ npm test
 - `FOROPENCODE_TURNSTILE_TOKEN`
 - `USAGE_TIMEZONE`
 - `USAGE_LOOKBACK_DAYS`
+- `USAGE_REFRESH_DAYS`
+  默认 `2`，每次同步重新抓取最近几天；其余日期从本地缓存复用。
+- `USAGE_CACHE_FILE`
+  默认是 `work/usage-log-cache.json`。
 - `USAGE_START_DATE`
   格式 `YYYY-MM-DD`
 - `USAGE_END_DATE`
