@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T03:35:52.683Z",
+  "generatedAt": "2026-07-23T03:51:50.317Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -40,20 +40,20 @@
     "username": "JunhaoCai7",
     "displayName": "JunhaoCai7",
     "group": "default",
-    "requestCount": 38536,
-    "remainingRawQuota": 31677542,
-    "remainingPrimaryBalance": 63.355084,
-    "usedRawQuota": 123320138,
-    "usedPrimaryCost": 246.640276,
+    "requestCount": 38546,
+    "remainingRawQuota": 31654600,
+    "remainingPrimaryBalance": 63.3092,
+    "usedRawQuota": 123343080,
+    "usedPrimaryCost": 246.68616,
     "totalRawQuota": 154997680,
     "totalPrimaryQuota": 309.99536,
-    "utilizationRate": 0.795626
+    "utilizationRate": 0.795774
   },
   "summary": {
     "totalDays": 30,
-    "totalRequests": 39053,
-    "totalRawQuota": 123345400,
-    "totalPrimaryCost": 246.6908,
+    "totalRequests": 39057,
+    "totalRawQuota": 123351616,
+    "totalPrimaryCost": 246.703232,
     "totalSecondaryCost": 0,
     "activePeople": 3,
     "activeTokens": 3,
@@ -3921,13 +3921,13 @@
     },
     {
       "date": "2026-07-23",
-      "requests": 1075,
-      "rawQuota": 2963672,
-      "primaryCost": 5.927344,
+      "requests": 1079,
+      "rawQuota": 2969888,
+      "primaryCost": 5.939776,
       "secondaryCost": 0,
-      "promptTokens": 128297146,
-      "completionTokens": 582191,
-      "cacheReadTokens": 120114432,
+      "promptTokens": 128544048,
+      "completionTokens": 585040,
+      "cacheReadTokens": 120352512,
       "cacheWriteTokens": 0,
       "people": [
         {
@@ -4024,13 +4024,13 @@
           "tokenNames": [
             "cjy"
           ],
-          "requests": 170,
-          "rawQuota": 384048,
-          "primaryCost": 0.768096,
+          "requests": 174,
+          "rawQuota": 390264,
+          "primaryCost": 0.780528,
           "secondaryCost": 0,
-          "promptTokens": 18657914,
-          "completionTokens": 102036,
-          "cacheReadTokens": 16857856,
+          "promptTokens": 18904816,
+          "completionTokens": 104885,
+          "cacheReadTokens": 17095936,
           "cacheWriteTokens": 0,
           "models": [
             {
@@ -4044,17 +4044,26 @@
             },
             {
               "name": "gpt-5.6-terra",
-              "requests": 18,
-              "rawQuota": 20381,
-              "primaryCost": 0.040762,
+              "requests": 22,
+              "rawQuota": 26597,
+              "primaryCost": 0.053194,
               "secondaryCost": 0,
-              "promptTokens": 814130,
-              "completionTokens": 6387
+              "promptTokens": 1061032,
+              "completionTokens": 9236
             }
           ]
         }
       ],
       "models": [
+        {
+          "name": "gpt-5.6-terra",
+          "requests": 572,
+          "rawQuota": 1447577,
+          "primaryCost": 2.895154,
+          "secondaryCost": 0,
+          "promptTokens": 64056470,
+          "completionTokens": 299182
+        },
         {
           "name": "gpt-5.6-sol",
           "requests": 488,
@@ -4063,15 +4072,6 @@
           "secondaryCost": 0,
           "promptTokens": 62195390,
           "completionTokens": 284537
-        },
-        {
-          "name": "gpt-5.6-terra",
-          "requests": 568,
-          "rawQuota": 1441361,
-          "primaryCost": 2.882722,
-          "secondaryCost": 0,
-          "promptTokens": 63809568,
-          "completionTokens": 296333
         },
         {
           "name": "codex-auto-review",
@@ -5964,25 +5964,25 @@
         "cjy"
       ],
       "totals": {
-        "requests": 3903,
-        "rawQuota": 8012488,
-        "primaryCost": 16.024976,
+        "requests": 3907,
+        "rawQuota": 8018704,
+        "primaryCost": 16.037408,
         "secondaryCost": 0,
-        "promptTokens": 410743547,
-        "completionTokens": 2088899,
-        "cacheReadTokens": 380144128,
+        "promptTokens": 410990449,
+        "completionTokens": 2091748,
+        "cacheReadTokens": 380382208,
         "cacheWriteTokens": 0
       },
       "days": [
         {
           "date": "2026-07-23",
-          "requests": 170,
-          "rawQuota": 384048,
-          "primaryCost": 0.768096,
+          "requests": 174,
+          "rawQuota": 390264,
+          "primaryCost": 0.780528,
           "secondaryCost": 0,
-          "promptTokens": 18657914,
-          "completionTokens": 102036,
-          "cacheReadTokens": 16857856,
+          "promptTokens": 18904816,
+          "completionTokens": 104885,
+          "cacheReadTokens": 17095936,
           "cacheWriteTokens": 0,
           "models": [
             {
@@ -5996,12 +5996,12 @@
             },
             {
               "name": "gpt-5.6-terra",
-              "requests": 18,
-              "rawQuota": 20381,
-              "primaryCost": 0.040762,
+              "requests": 22,
+              "rawQuota": 26597,
+              "primaryCost": 0.053194,
               "secondaryCost": 0,
-              "promptTokens": 814130,
-              "completionTokens": 6387
+              "promptTokens": 1061032,
+              "completionTokens": 9236
             }
           ]
         },
@@ -9360,13 +9360,13 @@
       "tokenNames": [
         "cjy"
       ],
-      "requests": 170,
-      "rawQuota": 384048,
-      "primaryCost": 0.768096,
+      "requests": 174,
+      "rawQuota": 390264,
+      "primaryCost": 0.780528,
       "secondaryCost": 0,
-      "promptTokens": 18657914,
-      "completionTokens": 102036,
-      "cacheReadTokens": 16857856,
+      "promptTokens": 18904816,
+      "completionTokens": 104885,
+      "cacheReadTokens": 17095936,
       "cacheWriteTokens": 0,
       "models": [
         {
@@ -9380,12 +9380,12 @@
         },
         {
           "name": "gpt-5.6-terra",
-          "requests": 18,
-          "rawQuota": 20381,
-          "primaryCost": 0.040762,
+          "requests": 22,
+          "rawQuota": 26597,
+          "primaryCost": 0.053194,
           "secondaryCost": 0,
-          "promptTokens": 814130,
-          "completionTokens": 6387
+          "promptTokens": 1061032,
+          "completionTokens": 9236
         }
       ]
     }
