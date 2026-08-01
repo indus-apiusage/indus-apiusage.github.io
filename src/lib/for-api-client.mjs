@@ -362,6 +362,7 @@ export class ForApiClient {
 
       if (canRetryWithCredentials) {
         this.cookies.clear();
+        this.authorization = "";
         this.hasLoggedIn = false;
         await this.login();
         return this.requestJson(path, {
@@ -394,6 +395,7 @@ export class ForApiClient {
 
       if (canRetryWithCredentials) {
         this.cookies.clear();
+        this.authorization = "";
         this.hasLoggedIn = false;
         await this.login();
         return this.requestJson(path, {
@@ -452,6 +454,8 @@ export class ForApiClient {
   }
 
   async performLogin() {
+    // Password login is the recovery path for expired or copied browser tokens.
+    this.authorization = "";
 
     if (!this.auth.username || !this.auth.password) {
       throw new Error(

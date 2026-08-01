@@ -551,7 +551,11 @@ final class ConsoleModel: ObservableObject {
                 scope: "self",
                 auth: RuntimeAuth(
                     cookie: secret.cookie,
-                    authorization: secret.authorization,
+                    // A password login must not be shadowed by an old Bearer token
+                    // that may still be present in the Keychain record.
+                    authorization: secret.username.isEmpty || secret.password.isEmpty
+                        ? secret.authorization
+                        : "",
                     userId: profile.userID,
                     username: secret.username,
                     password: secret.password
