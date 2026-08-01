@@ -437,12 +437,13 @@ export class ForApiClient {
   }
 
   async login() {
-    if (this.cookies.size > 0 || this.hasLoggedIn) {
-      return;
-    }
-
     if (this.loginPromise) {
       return this.loginPromise;
+    }
+
+    const hasPasswordCredentials = Boolean(this.auth.username && this.auth.password);
+    if (this.hasLoggedIn || (!hasPasswordCredentials && (this.cookies.size > 0 || this.authorization))) {
+      return;
     }
 
     this.loginPromise = this.performLogin();
@@ -477,6 +478,15 @@ export class ForApiClient {
       throw new Error(response?.message || "Login failed.");
     }
 
+    const accessToken =
+      response?.data?.access_token ??
+      response?.data?.accessToken ??
+      response?.access_token ??
+      response?.accessToken;
+    if (accessToken) {
+      this.authorization = normalizeAuthorization(String(accessToken));
+    }
+
     const userId =
       response?.data?.id ??
       response?.data?.user?.id ??
@@ -491,6 +501,11 @@ export class ForApiClient {
   }
 
   async ensureAuthenticated() {
+    if (this.auth.username && this.auth.password) {
+      await this.login();
+      return;
+    }
+
     if (this.cookies.size > 0 || this.authorization) {
       return;
     }

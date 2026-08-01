@@ -112,6 +112,8 @@ async function loadAccountSnapshot(account) {
     baseUrl: account.baseUrl,
     auth: account.auth,
   });
+  // Complete password authentication before parallel requests share the client.
+  await client.ensureAuthenticated();
   const [statusResponse, selfResponse, groupsResponse] = await Promise.all([
     client.fetchStatus(),
     client.fetchSelf(),
