@@ -101,7 +101,7 @@ struct SidebarView: View {
                 Circle()
                     .fill(Color(hex: 0x79E4B1))
                     .frame(width: 7, height: 7)
-                    .shadow(color: Color(hex: 0x79E4B1).opacity(0.8), radius: 8)
+                    .shadow(color: Color(hex: 0x79E4B1).opacity(0.45), radius: 3)
                 Text("LOCAL CONSOLE")
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .tracking(1.3)
@@ -180,7 +180,7 @@ struct SidebarButton: View {
                     Circle()
                         .fill(Color(hex: 0x73D4FF))
                         .frame(width: 5, height: 5)
-                        .shadow(color: Color(hex: 0x73D4FF), radius: 7)
+                        .shadow(color: Color(hex: 0x73D4FF).opacity(0.55), radius: 3)
                 }
             }
             .foregroundStyle(selected ? ConsolePalette.ink : ConsolePalette.muted)
@@ -222,7 +222,7 @@ struct SidebarSyncBadge: View {
                 Circle()
                     .fill(model.phase.color)
                     .frame(width: 7, height: 7)
-                    .shadow(color: model.phase.color, radius: 7)
+                    .shadow(color: model.phase.color.opacity(0.55), radius: 3)
             }
             Text(model.phase.title)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -309,17 +309,11 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 18) {
             HeroPanel(model: model)
             MetricsStrip(model: model)
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .bottom, spacing: 18) {
-                    AccountMatrixPanel(model: model)
-                        .frame(minWidth: 430, maxWidth: .infinity, alignment: .leading)
-                    SyncControlPanel(model: model)
-                        .frame(width: 330, alignment: .leading)
-                }
-                VStack(spacing: 18) {
-                    AccountMatrixPanel(model: model)
-                    SyncControlPanel(model: model)
-                }
+            HStack(alignment: .bottom, spacing: 18) {
+                AccountMatrixPanel(model: model)
+                    .frame(minWidth: 430, maxWidth: .infinity, alignment: .leading)
+                SyncControlPanel(model: model)
+                    .frame(width: 330, alignment: .leading)
             }
             EventLogPanel(model: model)
         }
@@ -331,19 +325,11 @@ struct HeroPanel: View {
 
     var body: some View {
         GlassCard {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 20) {
-                    HeroCopy(model: model)
-                    Spacer(minLength: 10)
-                    HeroOrbitalDisplay(phase: model.phase)
-                        .frame(width: 260, height: 220)
-                }
-                VStack(alignment: .leading, spacing: 15) {
-                    HeroCopy(model: model)
-                    HeroOrbitalDisplay(phase: model.phase)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 180)
-                }
+            HStack(spacing: 20) {
+                HeroCopy(model: model)
+                Spacer(minLength: 10)
+                HeroOrbitalDisplay(phase: model.phase)
+                    .frame(width: 260, height: 220)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 300, alignment: .leading)
@@ -404,7 +390,6 @@ struct HeroOrbitalDisplay: View {
                         endRadius: 120
                     )
                 )
-                .blur(radius: 10)
             ForEach(0..<3, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 999)
                     .stroke(
@@ -429,7 +414,7 @@ struct HeroOrbitalDisplay: View {
                 )
                 .frame(width: 58, height: 58)
                 .blur(radius: 0.2)
-                .shadow(color: phase.color.opacity(0.8), radius: 25)
+                .shadow(color: phase.color.opacity(0.55), radius: 10)
             Circle()
                 .stroke(ConsolePalette.ink.opacity(0.35), lineWidth: 1)
                 .frame(width: 17, height: 17)
@@ -595,7 +580,7 @@ struct AccountRow: View {
             Circle()
                 .fill(model.hasCredentials(for: profile.id) ? Color(hex: 0x79E4B1) : Color(hex: 0xFF8FA9))
                 .frame(width: 7, height: 7)
-                .shadow(color: model.hasCredentials(for: profile.id) ? Color(hex: 0x79E4B1) : Color(hex: 0xFF8FA9), radius: 7)
+                .shadow(color: model.hasCredentials(for: profile.id) ? Color(hex: 0x79E4B1).opacity(0.5) : Color(hex: 0xFF8FA9).opacity(0.5), radius: 3)
             Toggle("", isOn: Binding(
                 get: { profile.enabled },
                 set: { model.setEnabled($0, for: profile.id) }
@@ -694,7 +679,6 @@ struct SyncOrb: View {
         ZStack {
             Circle()
                 .fill(phase.color.opacity(0.12))
-                .blur(radius: 20)
             ForEach(0..<2, id: \.self) { index in
                 Circle()
                     .stroke(phase.color.opacity(0.18 - Double(index) * 0.05), lineWidth: 1)
@@ -703,7 +687,7 @@ struct SyncOrb: View {
             Image(systemName: phase == .running ? "arrow.triangle.2.circlepath" : "waveform.path")
                 .font(.system(size: 23, weight: .light))
                 .foregroundStyle(phase.color)
-                .shadow(color: phase.color, radius: 13)
+                .shadow(color: phase.color.opacity(0.55), radius: 6)
         }
     }
 }
@@ -834,17 +818,11 @@ struct SyncCenterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 18) {
-                    SyncStatusCard(model: model)
-                        .frame(minWidth: 500, maxWidth: .infinity, alignment: .leading)
-                    RuntimePanel(model: model)
-                        .frame(width: 300, alignment: .leading)
-                }
-                VStack(spacing: 18) {
-                    SyncStatusCard(model: model)
-                    RuntimePanel(model: model)
-                }
+            HStack(alignment: .top, spacing: 18) {
+                SyncStatusCard(model: model)
+                    .frame(minWidth: 500, maxWidth: .infinity, alignment: .leading)
+                RuntimePanel(model: model)
+                    .frame(width: 300, alignment: .leading)
             }
             GlassCard {
                 PanelHeader(eyebrow: "RAW EVENT STREAM", title: "同步日志", detail: "自动滚动到最新事件")
@@ -1274,8 +1252,16 @@ struct GlassCard<Content: View>: View {
         }
             .padding(padding)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
-            .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+            // Live material blur is expensive during window moves. A layered
+            // gradient preserves the depth while keeping the drag compositor fast.
+            .background(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.92), Color.white.opacity(0.78)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 25, style: .continuous)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 25, style: .continuous)
                     .stroke(
@@ -1287,7 +1273,7 @@ struct GlassCard<Content: View>: View {
                         lineWidth: 1
                     )
             }
-            .shadow(color: Color(hex: 0x6B7C99).opacity(0.18), radius: 24, y: 13)
+            .shadow(color: Color(hex: 0x6B7C99).opacity(0.13), radius: 10, y: 6)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -1306,7 +1292,6 @@ struct GlassButtonStyle: ButtonStyle {
             .overlay(Capsule().stroke(tint.opacity(filled ? 0 : 0.22), lineWidth: 1))
             .opacity(configuration.isPressed ? 0.68 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
@@ -1314,34 +1299,30 @@ struct LiquidBackdrop: View {
     var body: some View {
         ZStack {
             ConsolePalette.canvas
-            Circle()
-                .fill(ConsolePalette.cyan.opacity(0.18))
-                .frame(width: 520, height: 520)
-                .blur(radius: 90)
-                .offset(x: -300, y: -260)
-            Circle()
-                .fill(ConsolePalette.pink.opacity(0.16))
-                .frame(width: 460, height: 460)
-                .blur(radius: 100)
-                .offset(x: 310, y: 250)
-            Circle()
-                .fill(ConsolePalette.blue.opacity(0.12))
-                .frame(width: 380, height: 380)
-                .blur(radius: 110)
-                .offset(x: 180, y: -40)
-            Canvas { context, size in
-                var grid = Path()
-                let step: CGFloat = 72
-                stride(from: 0, through: size.width, by: step).forEach { x in
-                    grid.move(to: CGPoint(x: x, y: 0))
-                    grid.addLine(to: CGPoint(x: x, y: size.height))
-                }
-                stride(from: 0, through: size.height, by: step).forEach { y in
-                    grid.move(to: CGPoint(x: 0, y: y))
-                    grid.addLine(to: CGPoint(x: size.width, y: y))
-                }
-                context.stroke(grid, with: .color(ConsolePalette.ink.opacity(0.05)), lineWidth: 1)
-            }
+            RadialGradient(
+                colors: [ConsolePalette.cyan.opacity(0.15), Color.clear],
+                center: .center,
+                startRadius: 20,
+                endRadius: 280
+            )
+            .frame(width: 520, height: 520)
+            .offset(x: -300, y: -260)
+            RadialGradient(
+                colors: [ConsolePalette.pink.opacity(0.13), Color.clear],
+                center: .center,
+                startRadius: 20,
+                endRadius: 250
+            )
+            .frame(width: 460, height: 460)
+            .offset(x: 310, y: 250)
+            RadialGradient(
+                colors: [ConsolePalette.blue.opacity(0.1), Color.clear],
+                center: .center,
+                startRadius: 20,
+                endRadius: 220
+            )
+            .frame(width: 380, height: 380)
+            .offset(x: 180, y: -40)
         }
         .ignoresSafeArea()
     }
