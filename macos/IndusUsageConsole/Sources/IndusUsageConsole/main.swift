@@ -101,18 +101,23 @@ private struct StoredConsoleState: Codable {
 struct SnapshotAccount: Decodable, Identifiable {
     var id: String
     var label: String
+    var requestCount: Int
     var remainingPrimaryBalance: Double
     var usedPrimaryCost: Double
     var utilizationRate: Double
+    var gptPlusRatio: Double?
+    var gptPlusKey: String?
 
     private enum CodingKeys: String, CodingKey {
         case id
         case label
         case displayName
         case username
+        case requestCount
         case remainingPrimaryBalance
         case usedPrimaryCost
         case utilizationRate
+        case gptPlus
     }
 
     init(from decoder: Decoder) throws {
@@ -122,25 +127,91 @@ struct SnapshotAccount: Decodable, Identifiable {
             ?? container.decodeIfPresent(String.self, forKey: .displayName)
             ?? container.decodeIfPresent(String.self, forKey: .username)
             ?? "账号"
+        requestCount = try container.decodeIfPresent(Int.self, forKey: .requestCount) ?? 0
         remainingPrimaryBalance = try container.decodeIfPresent(Double.self, forKey: .remainingPrimaryBalance) ?? 0
         usedPrimaryCost = try container.decodeIfPresent(Double.self, forKey: .usedPrimaryCost) ?? 0
         utilizationRate = try container.decodeIfPresent(Double.self, forKey: .utilizationRate) ?? 0
+        let multiplier = try container.decodeIfPresent(SnapshotMultiplier.self, forKey: .gptPlus)
+        gptPlusRatio = multiplier?.ratio
+        gptPlusKey = multiplier?.key
     }
 
     var balanceText: String {
         String(format: "¥%.4f", remainingPrimaryBalance)
+    }
+
+    var usageText: String {
+        String(format: "¥%.4f", usedPrimaryCost)
+    }
+
+    var multiplierText: String {
+        guard let gptPlusRatio else { return "—" }
+        return String(format: "×%.2f", gptPlusRatio)
+    }
+}
+
+struct SnapshotMultiplier: Decodable {
+    var key: String
+    var ratio: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case ratio
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decodeIfPresent(String.self, forKey: .key) ?? "gpt_plus"
+        ratio = try container.decodeIfPresent(Double.self, forKey: .ratio) ?? 0
+    }
+}
+
+struct SnapshotPerson: Decodable, Identifiable {
+    var id: String
+    var displayName: String
+    var requests: Int
+    var primaryCost: Double
+
+    private struct Totals: Decodable {
+        var requests: Int
+        var primaryCost: Double
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case personId
+        case displayName
+        case totals
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .personId) ?? "person"
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? id
+        let totals = try container.decodeIfPresent(Totals.self, forKey: .totals)
+        requests = totals?.requests ?? 0
+        primaryCost = totals?.primaryCost ?? 0
+    }
+
+    var usageText: String {
+        String(format: "¥%.4f", primaryCost)
+    }
+
+    var requestText: String {
+        String(format: "%d 次请求", requests)
     }
 }
 
 struct DashboardSnapshot: Decodable {
     var generatedAt: String?
     var accounts: [SnapshotAccount]
+    var people: [SnapshotPerson]
     var summary: SnapshotSummary?
 
     private enum CodingKeys: String, CodingKey {
         case generatedAt
         case accounts
         case account
+        case people
         case summary
     }
 
@@ -148,6 +219,7 @@ struct DashboardSnapshot: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         generatedAt = try container.decodeIfPresent(String.self, forKey: .generatedAt)
         accounts = try container.decodeIfPresent([SnapshotAccount].self, forKey: .accounts) ?? []
+        people = try container.decodeIfPresent([SnapshotPerson].self, forKey: .people) ?? []
         if accounts.isEmpty, let legacyAccount = try container.decodeIfPresent(SnapshotAccount.self, forKey: .account) {
             accounts = [legacyAccount]
         }
@@ -178,7 +250,7 @@ enum SyncPhase: Equatable {
     var color: Color {
         switch self {
         case .idle: return .white.opacity(0.45)
-        case .running: return Color(hex: 0x73D4FF)
+        case .running: return Color(hex: 0x467FA7)
         case .success: return Color(hex: 0x79E4B1)
         case .failed: return Color(hex: 0xFF8FA9)
         }

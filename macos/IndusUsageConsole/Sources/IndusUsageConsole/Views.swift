@@ -7,8 +7,8 @@ private enum ConsolePalette {
     static let soft = Color(hex: 0x8B99AD)
     static let line = Color(hex: 0xD7E0EC)
     static let canvas = Color(hex: 0xF3F6FB)
-    static let cyan = Color(hex: 0x4BA9D8)
-    static let blue = Color(hex: 0x6B83ED)
+    static let cyan = Color(hex: 0x467FA7)
+    static let blue = Color(hex: 0x596AAE)
     static let pink = Color(hex: 0xE58AAF)
     static let mint = Color(hex: 0x4DAF8A)
 }
@@ -126,7 +126,7 @@ struct BrandLockup: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Color(hex: 0x81D9FF), Color(hex: 0x5F7BFF), Color(hex: 0xF58DB8)],
+                            colors: [Color(hex: 0x6B8FB8), Color(hex: 0x4E619B), Color(hex: 0xD77FA5)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -140,7 +140,7 @@ struct BrandLockup: View {
                     .rotationEffect(.degrees(45))
             }
             .frame(width: 42, height: 42)
-            .shadow(color: Color(hex: 0x73D4FF).opacity(0.35), radius: 18)
+            .shadow(color: ConsolePalette.cyan.opacity(0.35), radius: 18)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("INDUS")
@@ -178,9 +178,9 @@ struct SidebarButton: View {
                 Spacer()
                 if selected {
                     Circle()
-                        .fill(Color(hex: 0x73D4FF))
+                        .fill(ConsolePalette.cyan)
                         .frame(width: 5, height: 5)
-                        .shadow(color: Color(hex: 0x73D4FF).opacity(0.55), radius: 3)
+                        .shadow(color: ConsolePalette.cyan.opacity(0.55), radius: 3)
                 }
             }
             .foregroundStyle(selected ? ConsolePalette.ink : ConsolePalette.muted)
@@ -315,8 +315,92 @@ struct OverviewView: View {
                 SyncControlPanel(model: model)
                     .frame(width: 330, alignment: .leading)
             }
+            MemberUsagePanel(model: model)
             EventLogPanel(model: model)
         }
+    }
+}
+
+struct MemberUsagePanel: View {
+    @ObservedObject var model: ConsoleModel
+
+    private var multiplierText: String {
+        let ratios = (model.snapshot?.accounts ?? []).compactMap(\.gptPlusRatio)
+        guard !ratios.isEmpty else { return "等待同步" }
+        let labels = ratios.map { String(format: "×%.2f", $0) }
+        let uniqueLabels = labels.reduce(into: [String]()) { result, label in
+            if !result.contains(label) { result.append(label) }
+        }
+        return uniqueLabels.joined(separator: " · ")
+    }
+
+    var body: some View {
+        GlassCard {
+            PanelHeader(eyebrow: "WEB USAGE", title: "网站成员用量", detail: "当前同步窗口内的成员汇总") {
+                Text("gpt_plus \(multiplierText)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(ConsolePalette.cyan)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(ConsolePalette.cyan.opacity(0.1), in: Capsule())
+            }
+            if let people = model.snapshot?.people, !people.isEmpty {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(minimum: 0)), GridItem(.flexible(minimum: 0))],
+                    spacing: 10
+                ) {
+                    ForEach(people) { person in
+                        MemberUsageTile(person: person)
+                    }
+                }
+                .padding(.top, 16)
+            } else {
+                Text("等待同步后显示每个人的网站用量")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(ConsolePalette.muted)
+                    .padding(.top, 14)
+            }
+        }
+    }
+}
+
+struct MemberUsageTile: View {
+    let person: SnapshotPerson
+
+    var body: some View {
+        HStack(spacing: 11) {
+            ZStack {
+                Circle()
+                    .fill(ConsolePalette.blue.opacity(0.13))
+                Text(String(person.displayName.prefix(1)))
+                    .font(.system(size: 14, weight: .black, design: .rounded))
+                    .foregroundStyle(ConsolePalette.blue)
+            }
+            .frame(width: 36, height: 36)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(person.displayName)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(ConsolePalette.ink)
+                    .lineLimit(1)
+                Text(person.requestText)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(ConsolePalette.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(person.usageText)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(ConsolePalette.ink)
+                    .minimumScaleFactor(0.75)
+                Text("网站用量")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundStyle(ConsolePalette.soft)
+            }
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
     }
 }
 
@@ -345,9 +429,9 @@ struct HeroCopy: View {
                 Text("LIVE TELEMETRY")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .tracking(2)
-                    .foregroundStyle(Color(hex: 0x73D4FF))
+                    .foregroundStyle(ConsolePalette.cyan)
                 Capsule()
-                    .fill(Color(hex: 0x73D4FF).opacity(0.4))
+                    .fill(ConsolePalette.cyan.opacity(0.4))
                     .frame(width: 35, height: 1)
             }
             Text("SYNC\nTHE SIGNAL.")
@@ -436,7 +520,7 @@ struct SignalChip: View {
         HStack(spacing: 7) {
             Image(systemName: icon)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color(hex: 0x73D4FF))
+                .foregroundStyle(ConsolePalette.cyan)
             Text(value)
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(ConsolePalette.ink)
@@ -481,9 +565,9 @@ struct MetricTile: View {
             HStack(alignment: .top) {
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color(hex: 0x73D4FF))
+                    .foregroundStyle(ConsolePalette.cyan)
                     .frame(width: 28, height: 28)
-                    .background(Color(hex: 0x73D4FF).opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .background(ConsolePalette.cyan.opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 Spacer()
                 Text(eyebrow)
                     .font(.system(size: 8, weight: .bold, design: .monospaced))
@@ -515,7 +599,7 @@ struct AccountMatrixPanel: View {
                 } label: {
                     Label("添加账号", systemImage: "plus")
                 }
-                .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
+                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
             }
             if model.accounts.isEmpty {
                 EmptyAccountState { model.openNewAccount() }
@@ -538,7 +622,7 @@ struct AccountRow: View {
     let index: Int
 
     private var accent: Color {
-        [Color(hex: 0x73D4FF), Color(hex: 0xF28CB6), Color(hex: 0xA997FF), Color(hex: 0x79E4B1)][profile.colorIndex % 4]
+        [ConsolePalette.cyan, Color(hex: 0xF28CB6), Color(hex: 0x8E81D0), Color(hex: 0x79E4B1)][profile.colorIndex % 4]
     }
 
     var body: some View {
@@ -570,8 +654,11 @@ struct AccountRow: View {
                 Text(profile.userID.isEmpty ? "未设置 new-api-user" : "USER \(profile.userID) · \(shortHost(profile.baseURL))")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(ConsolePalette.muted)
-                if let balance = model.balance(for: index) {
-                    Text("余额 \(balance.balanceText) · 使用率 \(String(format: "%.1f%%", balance.utilizationRate * 100))")
+                if let account = model.balance(for: index) {
+                    Text("余额 \(account.balanceText) · 网站用量 \(account.usageText)")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(accent.opacity(0.8))
+                    Text("\(account.requestCount) 次请求 · 使用率 \(String(format: "%.1f%%", account.utilizationRate * 100)) · gpt_plus \(account.multiplierText)")
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
                         .foregroundStyle(accent.opacity(0.8))
                 }
@@ -609,7 +696,7 @@ struct EmptyAccountState: View {
         VStack(spacing: 12) {
             Image(systemName: "person.badge.plus")
                 .font(.system(size: 27, weight: .light))
-                .foregroundStyle(Color(hex: 0x73D4FF))
+                .foregroundStyle(ConsolePalette.cyan)
             Text("还没有接入身份")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundStyle(ConsolePalette.ink)
@@ -617,7 +704,7 @@ struct EmptyAccountState: View {
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(ConsolePalette.muted)
             Button("添加第一个账号", action: action)
-                .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
+                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                 .padding(.top, 3)
         }
         .frame(maxWidth: .infinity)
@@ -723,7 +810,7 @@ struct AccountsView: View {
                     } label: {
                         Label("添加账号", systemImage: "plus")
                     }
-                    .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
+                    .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 13)], spacing: 13) {
                     ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, profile in
@@ -755,7 +842,7 @@ struct AccountDetailCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Circle()
-                    .fill(Color(hex: profile.colorIndex % 2 == 0 ? 0x73D4FF : 0xF28CB6).opacity(0.8))
+                    .fill((profile.colorIndex % 2 == 0 ? ConsolePalette.cyan : Color(hex: 0xF28CB6)).opacity(0.8))
                     .frame(width: 10, height: 10)
                 Text(profile.label.isEmpty ? profile.name : profile.label)
                     .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -781,6 +868,15 @@ struct AccountDetailCard: View {
                 MetadataValue(title: "USER ID", value: profile.userID.isEmpty ? "—" : profile.userID)
                 Spacer()
                 MetadataValue(title: "AUTH", value: model.hasCredentials(for: profile.id) ? "KEYCHAIN" : "MISSING")
+            }
+            if let account = model.balance(for: index) {
+                HStack {
+                    MetadataValue(title: "网站用量", value: account.usageText)
+                    Spacer()
+                    MetadataValue(title: "GPT_PLUS 倍率", value: account.multiplierText)
+                    Spacer()
+                    MetadataValue(title: "请求数", value: "\(account.requestCount)")
+                }
             }
             Toggle("参与自动同步", isOn: Binding(
                 get: { profile.enabled },
@@ -858,7 +954,7 @@ struct SyncStatusCard: View {
                         Button(model.settings.autoSync ? "暂停" : "启动") {
                             model.setAutoSync(!model.settings.autoSync)
                         }
-                        .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
+                        .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                     }
                     .padding(.top, 5)
                 }
@@ -924,7 +1020,7 @@ struct SettingsView: View {
                                 .truncationMode(.middle)
                             Spacer()
                             Button("选择") { model.chooseProject() }
-                                .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
+                                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                         }
                     }
                     SettingRow(title: "自动同步", detail: "开启后 App 会启动现有五分钟循环") {
@@ -960,7 +1056,7 @@ struct SettingsView: View {
                                 .lineLimit(1)
                             Spacer()
                             Button("选择") { model.chooseSSHKey() }
-                                .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
+                                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                         }
                     }
                 }
@@ -1030,7 +1126,7 @@ struct AccountEditorView: View {
                         Text("CREDENTIAL INTAKE")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .tracking(2)
-                            .foregroundStyle(Color(hex: 0x73D4FF))
+                            .foregroundStyle(ConsolePalette.cyan)
                     }
                     Spacer()
                     Button { dismiss() } label: {
@@ -1115,7 +1211,7 @@ struct AccountEditorView: View {
                         onSave(draft)
                         dismiss()
                     }
-                    .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF), filled: true))
+                    .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan, filled: true))
                     .disabled(draft.profile.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .padding(.top, 22)
@@ -1193,7 +1289,7 @@ struct LogView: View {
             return Color(hex: 0x79E4B1).opacity(0.9)
         }
         if line.contains("Starting") || line.contains("Fetched") {
-            return Color(hex: 0x73D4FF).opacity(0.9)
+            return ConsolePalette.cyan.opacity(0.9)
         }
         return ConsolePalette.muted
     }
@@ -1218,7 +1314,7 @@ struct PanelHeader<Accessory: View>: View {
                 Text(eyebrow)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .tracking(1.8)
-                    .foregroundStyle(Color(hex: 0x73D4FF).opacity(0.78))
+                    .foregroundStyle(ConsolePalette.cyan.opacity(0.78))
                 Text(title)
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundStyle(ConsolePalette.ink)
