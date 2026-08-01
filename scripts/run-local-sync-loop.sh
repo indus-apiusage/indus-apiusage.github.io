@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PID_FILE="${ROOT_DIR}/work/sync-loop.pid"
 LOCK_DIR="${ROOT_DIR}/work/sync-loop.lock"
 LOG_FILE="${ROOT_DIR}/work/sync-loop.log"
-ENV_FILE="${ROOT_DIR}/work/sync.env"
+ENV_FILE="${SYNC_ENV_FILE:-${ROOT_DIR}/work/sync.env}"
 
 mkdir -p "${ROOT_DIR}/work"
 

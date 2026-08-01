@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${ROOT_DIR}/work/sync.env"
+ENV_FILE="${SYNC_ENV_FILE:-${ROOT_DIR}/work/sync.env}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing local sync env file: $ENV_FILE" >&2

@@ -205,6 +205,27 @@ npm run sync:placeholder
 npm test
 ```
 
+## macOS 控制台 App
+
+仓库包含一个原生 SwiftUI 控制台 `Indus Usage Console`，用于替代终端管理本地同步。它支持：
+
+- 添加、编辑、启用或暂停多个 ForOpenCode 账号。
+- 使用 macOS Keychain 保存 Bearer Token、Cookie、用户名和密码。
+- 一键启动或暂停五分钟同步循环，或者立即执行一次同步并推送。
+- 查看账号余额、凭据状态、同步 PID 和最近运行日志。
+- 选择项目目录、网络代理和 Git SSH 私钥路径。
+
+在 macOS 上构建并打开：
+
+```bash
+chmod +x scripts/build-macos-app.sh
+bash scripts/build-macos-app.sh --open
+```
+
+生成的 App 位于 `dist/Indus Usage Console.app`。首次使用时，在“控制设置”确认项目目录，再进入“账号矩阵”添加账号。App 只把非敏感账号元数据写入 Application Support，敏感凭据写入 Keychain；同步时通过 `SYNC_ENV_FILE` 生成权限为 `600` 的本地运行环境，并复用现有 Bash/Node 同步链路。
+
+App 需要 macOS 13 或更高版本。当前项目没有把生成的 `.app`、Swift 构建缓存或运行时凭据提交到 Git。
+
 ## 可用环境变量
 
 - `FOROPENCODE_BASE_URL`
