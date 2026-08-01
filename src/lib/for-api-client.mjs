@@ -137,6 +137,7 @@ export class ForApiClient {
     this.authorization = normalizeAuthorization(auth.authorization);
     this.hasLoggedIn = false;
     this.userId = String(auth.userId || "").trim();
+    this.loginPromise = null;
   }
 
   get proxyUrl() {
@@ -437,6 +438,20 @@ export class ForApiClient {
     if (this.cookies.size > 0 || this.hasLoggedIn) {
       return;
     }
+
+    if (this.loginPromise) {
+      return this.loginPromise;
+    }
+
+    this.loginPromise = this.performLogin();
+    try {
+      await this.loginPromise;
+    } finally {
+      this.loginPromise = null;
+    }
+  }
+
+  async performLogin() {
 
     if (!this.auth.username || !this.auth.password) {
       throw new Error(

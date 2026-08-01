@@ -10,10 +10,13 @@ struct IndusUsageConsoleApp: App {
     var body: some Scene {
         WindowGroup {
             ConsoleRootView(model: model)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+        // The dashboard contains a scroll view and responsive grids. Let AppKit
+        // manage the window frame instead of recomputing content-size constraints
+        // on every animation tick.
+        .windowResizability(.automatic)
     }
 }
 
@@ -246,7 +249,10 @@ final class ConsoleModel: ObservableObject {
     private var loopProcess: Process?
     private var onceProcess: Process?
     private var ownsLoop = false
+    private var autoStartScheduled = false
     private var pollTimer: Timer?
+    private var lastLogModificationDate: Date?
+    private var lastSnapshotModificationDate: Date?
 
     var enabledAccounts: [AccountProfile] { accounts.filter(\.enabled) }
     var isLoopRunning: Bool { loopProcess?.isRunning == true || existingLoopPID != nil }
@@ -264,7 +270,9 @@ final class ConsoleModel: ObservableObject {
 
     init() {
         loadState()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        // Runtime state does not need a frame-rate poll. Five seconds keeps the
+        // console responsive while avoiding repeated disk reads and view updates.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshRuntime() }
         }
         refreshRuntime()
@@ -333,17 +341,21 @@ final class ConsoleModel: ObservableObject {
 
     func startSync() {
         guard loopProcess?.isRunning != true else { return }
-        guard existingLoopPID == nil else {
-            phase = .running
-            ownsLoop = false
-            eventMessage = "检测到已有终端同步进程，App 已接管监测"
-            return
-        }
         guard credentialsReady else {
             phase = .failed
             eventMessage = "请先为所有启用账号补充凭据"
             settings.autoSync = false
             persistState()
+            return
+        }
+        if let pid = existingLoopPID, !takeOverExternalLoop(pid) {
+            phase = .failed
+            eventMessage = "检测到无法确认来源的同步进程，请先在终端停止它"
+            return
+        }
+        guard existingLoopPID == nil else {
+            phase = .failed
+            eventMessage = "旧同步进程尚未退出，请稍后重试"
             return
         }
         do {
@@ -374,17 +386,24 @@ final class ConsoleModel: ObservableObject {
     }
 
     func stopSync() {
-        guard ownsLoop, let process = loopProcess, process.isRunning else {
-            eventMessage = "当前没有由 App 启动的同步进程"
-            refreshRuntime()
+        if ownsLoop, let process = loopProcess, process.isRunning {
+            process.terminate()
+            loopProcess = nil
+            ownsLoop = false
+            phase = .idle
+            eventMessage = "自动同步已暂停"
+            removeRuntimeEnvironment()
             return
         }
-        process.terminate()
-        loopProcess = nil
-        ownsLoop = false
-        phase = .idle
-        eventMessage = "自动同步已暂停"
-        removeRuntimeEnvironment()
+
+        if let pid = existingLoopPID, takeOverExternalLoop(pid) {
+            phase = .idle
+            eventMessage = "已停止旧的终端同步进程"
+            return
+        }
+
+        eventMessage = "当前没有可停止的同步进程"
+        refreshRuntime()
     }
 
     func runOnce() {
@@ -473,10 +492,25 @@ final class ConsoleModel: ObservableObject {
         refreshLog()
         loadSnapshot()
         if loopProcess?.isRunning != true, let _ = existingLoopPID {
-            phase = .running
-            ownsLoop = false
+            if phase != .running { phase = .running }
+            if ownsLoop { ownsLoop = false }
         } else if loopProcess?.isRunning != true, onceProcess?.isRunning != true, phase == .running {
             phase = .idle
+        }
+
+        if settings.autoSync,
+           loopProcess?.isRunning != true,
+           onceProcess?.isRunning != true,
+           existingLoopPID == nil,
+           credentialsReady,
+           phase != .failed,
+           !autoStartScheduled {
+            autoStartScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.autoStartScheduled = false
+                self.startSync()
+            }
         }
     }
 
@@ -528,6 +562,7 @@ final class ConsoleModel: ObservableObject {
         var lines = ["export FOROPENCODE_ACCOUNTS_JSON=\(shellQuote(json))"]
         if !settings.proxy.isEmpty { lines.append("export FOROPENCODE_PROXY=\(shellQuote(settings.proxy))") }
         if !settings.sshKeyPath.isEmpty { lines.append("export SYNC_GIT_SSH_KEY_PATH=\(shellQuote(settings.sshKeyPath))") }
+        lines.append("export SYNC_INTERVAL_SECONDS=\(max(60, settings.intervalMinutes * 60))")
         try lines.joined(separator: "\n").appending("\n").write(to: envURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: envURL.path)
         return envURL
@@ -544,18 +579,64 @@ final class ConsoleModel: ObservableObject {
         try? FileManager.default.removeItem(at: projectURL.appendingPathComponent("work/app-sync.env"))
     }
 
+    private func takeOverExternalLoop(_ pid: Int32) -> Bool {
+        guard isExpectedLoopProcess(pid) else { return false }
+
+        eventMessage = "正在接管旧的终端同步进程"
+        _ = kill(pid, SIGTERM)
+
+        for _ in 0..<25 {
+            if kill(pid, 0) != 0 { return true }
+            usleep(100_000)
+        }
+
+        if kill(pid, 0) == 0 {
+            _ = kill(pid, SIGKILL)
+            usleep(100_000)
+        }
+
+        return existingLoopPID == nil
+    }
+
+    private func isExpectedLoopProcess(_ pid: Int32) -> Bool {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-p", String(pid), "-o", "command="]
+        process.standardOutput = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return false
+        }
+
+        let command = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return command.contains("run-local-sync-loop.sh")
+    }
+
     private func refreshLog() {
         let logURL = projectURL.appendingPathComponent("work/sync-loop.log")
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: logURL.path),
+              let modificationDate = attributes[.modificationDate] as? Date else { return }
+        guard modificationDate != lastLogModificationDate else { return }
         guard let text = try? String(contentsOf: logURL, encoding: .utf8) else { return }
-        logLines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let updatedLines = text.split(separator: "\n", omittingEmptySubsequences: false)
             .suffix(90)
             .map(String.init)
+        lastLogModificationDate = modificationDate
+        if updatedLines != logLines { logLines = updatedLines }
     }
 
     private func loadSnapshot() {
         let url = projectURL.appendingPathComponent("docs/data/latest.json")
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let modificationDate = attributes[.modificationDate] as? Date else { return }
+        guard modificationDate != lastSnapshotModificationDate else { return }
         guard let data = try? Data(contentsOf: url),
               let value = try? JSONDecoder().decode(DashboardSnapshot.self, from: data) else { return }
+        lastSnapshotModificationDate = modificationDate
         snapshot = value
     }
 

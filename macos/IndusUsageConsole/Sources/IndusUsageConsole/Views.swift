@@ -1,6 +1,18 @@
 import AppKit
 import SwiftUI
 
+private enum ConsolePalette {
+    static let ink = Color(hex: 0x1B2437)
+    static let muted = Color(hex: 0x65738A)
+    static let soft = Color(hex: 0x8B99AD)
+    static let line = Color(hex: 0xD7E0EC)
+    static let canvas = Color(hex: 0xF3F6FB)
+    static let cyan = Color(hex: 0x4BA9D8)
+    static let blue = Color(hex: 0x6B83ED)
+    static let pink = Color(hex: 0xE58AAF)
+    static let mint = Color(hex: 0x4DAF8A)
+}
+
 struct ConsoleRootView: View {
     @ObservedObject var model: ConsoleModel
 
@@ -10,24 +22,40 @@ struct ConsoleRootView: View {
             HStack(spacing: 0) {
                 SidebarView(model: model)
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(ConsolePalette.line.opacity(0.9))
                     .frame(width: 1)
                 VStack(spacing: 0) {
                     TopBar(model: model)
-                    ScrollView(.vertical, showsIndicators: false) {
-                        Group {
-                            switch model.section {
-                            case .overview: OverviewView(model: model)
-                            case .accounts: AccountsView(model: model)
-                            case .sync: SyncCenterView(model: model)
-                            case .settings: SettingsView(model: model)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            Group {
+                                switch model.section {
+                                case .overview: OverviewView(model: model)
+                                case .accounts: AccountsView(model: model)
+                                case .sync: SyncCenterView(model: model)
+                                case .settings: SettingsView(model: model)
+                                }
+                            }
+                            .id("console-content-top")
+                            .padding(.horizontal, 32)
+                            .padding(.bottom, 36)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onAppear {
+                            DispatchQueue.main.async {
+                                proxy.scrollTo("console-content-top", anchor: .top)
                             }
                         }
-                        .padding(.horizontal, 32)
-                        .padding(.bottom, 36)
+                        .onChange(of: model.section) { _ in
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo("console-content-top", anchor: .top)
+                            }
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(minWidth: 1160, minHeight: 760)
         .sheet(item: $model.editingDraft) { draft in
@@ -51,7 +79,7 @@ struct SidebarView: View {
             Text("CONTROL DECK")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .tracking(2.4)
-                .foregroundStyle(Color.white.opacity(0.36))
+                .foregroundStyle(ConsolePalette.muted)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
 
@@ -77,17 +105,17 @@ struct SidebarView: View {
                 Text("LOCAL CONSOLE")
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .tracking(1.3)
-                    .foregroundStyle(Color.white.opacity(0.38))
+                    .foregroundStyle(ConsolePalette.muted)
                 Spacer()
                 Text("v1.0")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.22))
+                    .foregroundStyle(ConsolePalette.soft)
             }
             .padding(.horizontal, 23)
             .padding(.bottom, 22)
         }
         .frame(width: 244)
-        .background(Color.black.opacity(0.18))
+        .background(Color.white.opacity(0.72))
     }
 }
 
@@ -118,11 +146,11 @@ struct BrandLockup: View {
                 Text("INDUS")
                     .font(.system(size: 17, weight: .black, design: .rounded))
                     .tracking(2.8)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ConsolePalette.ink)
                 Text("API USAGE CONSOLE")
                     .font(.system(size: 8, weight: .bold, design: .monospaced))
                     .tracking(1.2)
-                    .foregroundStyle(Color.white.opacity(0.42))
+                    .foregroundStyle(ConsolePalette.muted)
             }
         }
     }
@@ -155,7 +183,7 @@ struct SidebarButton: View {
                         .shadow(color: Color(hex: 0x73D4FF), radius: 7)
                 }
             }
-            .foregroundStyle(selected ? Color.white : Color.white.opacity(0.48))
+            .foregroundStyle(selected ? ConsolePalette.ink : ConsolePalette.muted)
             .padding(.horizontal, 13)
             .padding(.vertical, 12)
             .background {
@@ -163,14 +191,14 @@ struct SidebarButton: View {
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.13), Color(hex: 0x6CA6FF).opacity(0.07)],
+                                colors: [Color.white.opacity(0.86), ConsolePalette.blue.opacity(0.12)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .overlay {
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                .stroke(ConsolePalette.cyan.opacity(0.26), lineWidth: 1)
                         }
                 }
             }
@@ -189,7 +217,7 @@ struct SidebarSyncBadge: View {
                 Text("SYNC ENGINE")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .tracking(1.5)
-                    .foregroundStyle(Color.white.opacity(0.42))
+                    .foregroundStyle(ConsolePalette.muted)
                 Spacer()
                 Circle()
                     .fill(model.phase.color)
@@ -198,20 +226,20 @@ struct SidebarSyncBadge: View {
             }
             Text(model.phase.title)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(ConsolePalette.ink)
             Text(model.eventMessage)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.42))
+                .foregroundStyle(ConsolePalette.muted)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .background {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.white.opacity(0.72))
                 .overlay {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(ConsolePalette.line, lineWidth: 1)
                 }
         }
     }
@@ -226,23 +254,23 @@ struct TopBar: View {
                 Text(model.section.subtitle)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .tracking(2.1)
-                    .foregroundStyle(Color(hex: 0x73D4FF))
+                    .foregroundStyle(ConsolePalette.cyan)
                 Text(model.section.title)
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ConsolePalette.ink)
             }
             Spacer()
             Text(Date.now.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.38))
+                .foregroundStyle(ConsolePalette.muted)
             Button {
                 model.refreshRuntime()
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .foregroundStyle(ConsolePalette.ink.opacity(0.75))
                     .frame(width: 34, height: 34)
-                    .background(Color.white.opacity(0.07), in: Circle())
+                    .background(Color.white.opacity(0.82), in: Circle())
             }
             .buttonStyle(.plain)
             .help("刷新状态")
@@ -281,11 +309,17 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 18) {
             HeroPanel(model: model)
             MetricsStrip(model: model)
-            HStack(alignment: .top, spacing: 18) {
-                AccountMatrixPanel(model: model)
-                    .frame(maxWidth: .infinity)
-                SyncControlPanel(model: model)
-                    .frame(width: 330)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .bottom, spacing: 18) {
+                    AccountMatrixPanel(model: model)
+                        .frame(minWidth: 430, maxWidth: .infinity, alignment: .leading)
+                    SyncControlPanel(model: model)
+                        .frame(width: 330, alignment: .leading)
+                }
+                VStack(spacing: 18) {
+                    AccountMatrixPanel(model: model)
+                    SyncControlPanel(model: model)
+                }
             }
             EventLogPanel(model: model)
         }
@@ -297,45 +331,62 @@ struct HeroPanel: View {
 
     var body: some View {
         GlassCard {
-            HStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 17) {
-                    HStack(spacing: 10) {
-                        Text("LIVE TELEMETRY")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(2)
-                            .foregroundStyle(Color(hex: 0x73D4FF))
-                        Capsule()
-                            .fill(Color(hex: 0x73D4FF).opacity(0.4))
-                            .frame(width: 35, height: 1)
-                    }
-                    Text("SYNC\nTHE SIGNAL.")
-                        .font(.system(size: 52, weight: .black, design: .rounded))
-                        .tracking(-1.8)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.white, Color.white.opacity(0.67)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .lineSpacing(-5)
-                    Text("一个控制台，管理所有 ForOpenCode 账号的认证、同步与发布节奏。凭据进入 Keychain，数据沿现有流水线安全落地。")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.48))
-                        .lineSpacing(5)
-                        .frame(maxWidth: 520, alignment: .leading)
-                    HStack(spacing: 9) {
-                        SignalChip(icon: "person.2.fill", value: "\(model.enabledAccounts.count)", label: "启用账号")
-                        SignalChip(icon: "timer", value: "\(model.settings.intervalMinutes)m", label: "周期")
-                        SignalChip(icon: "lock.shield.fill", value: "Keychain", label: "凭据")
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) {
+                    HeroCopy(model: model)
+                    Spacer(minLength: 10)
+                    HeroOrbitalDisplay(phase: model.phase)
+                        .frame(width: 260, height: 220)
                 }
-                Spacer(minLength: 10)
-                HeroOrbitalDisplay(phase: model.phase)
-                    .frame(width: 260, height: 220)
+                VStack(alignment: .leading, spacing: 15) {
+                    HeroCopy(model: model)
+                    HeroOrbitalDisplay(phase: model.phase)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 180)
+                }
             }
         }
-        .frame(minHeight: 300)
+        .frame(maxWidth: .infinity, minHeight: 300, alignment: .leading)
+    }
+}
+
+struct HeroCopy: View {
+    @ObservedObject var model: ConsoleModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            HStack(spacing: 10) {
+                Text("LIVE TELEMETRY")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(2)
+                    .foregroundStyle(Color(hex: 0x73D4FF))
+                Capsule()
+                    .fill(Color(hex: 0x73D4FF).opacity(0.4))
+                    .frame(width: 35, height: 1)
+            }
+            Text("SYNC\nTHE SIGNAL.")
+                .font(.system(size: 52, weight: .black, design: .rounded))
+                .tracking(-1.8)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [ConsolePalette.ink, ConsolePalette.muted.opacity(0.72)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .lineSpacing(-5)
+            Text("一个控制台，管理所有 ForOpenCode 账号的认证、同步与发布节奏。凭据进入 Keychain，数据沿现有流水线安全落地。")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(ConsolePalette.muted)
+                .lineSpacing(5)
+                .frame(maxWidth: 520, alignment: .leading)
+            HStack(spacing: 9) {
+                SignalChip(icon: "person.2.fill", value: "\(model.enabledAccounts.count)", label: "启用账号")
+                SignalChip(icon: "timer", value: "\(model.settings.intervalMinutes)m", label: "周期")
+                SignalChip(icon: "lock.shield.fill", value: "Keychain", label: "凭据")
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -343,53 +394,50 @@ struct HeroOrbitalDisplay: View {
     let phase: SyncPhase
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [phase.color.opacity(0.24), Color.clear],
-                            center: .center,
-                            startRadius: 5,
-                            endRadius: 120
-                        )
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [phase.color.opacity(0.24), Color.clear],
+                        center: .center,
+                        startRadius: 5,
+                        endRadius: 120
                     )
-                    .blur(radius: 10)
-                ForEach(0..<3, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 999)
-                        .stroke(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.26), phase.color.opacity(0.65), Color.white.opacity(0.05)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            lineWidth: index == 0 ? 1.2 : 0.7
-                        )
-                        .frame(width: 150 + CGFloat(index) * 33, height: 72 + CGFloat(index) * 26)
-                        .rotationEffect(.degrees(Double(index) * 32 + time * (index.isMultiple(of: 2) ? 3 : -2)))
-                }
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [.white, phase.color, phase.color.opacity(0.05)],
-                            center: .topLeading,
-                            startRadius: 2,
-                            endRadius: 65
-                        )
+                )
+                .blur(radius: 10)
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 999)
+                    .stroke(
+                        LinearGradient(
+                            colors: [ConsolePalette.ink.opacity(0.18), phase.color.opacity(0.65), ConsolePalette.ink.opacity(0.05)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        lineWidth: index == 0 ? 1.2 : 0.7
                     )
-                    .frame(width: 58, height: 58)
-                    .blur(radius: 0.2)
-                    .shadow(color: phase.color.opacity(0.8), radius: 25)
-                Circle()
-                    .stroke(Color.white.opacity(0.7), lineWidth: 1)
-                    .frame(width: 17, height: 17)
-                Text("01")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .tracking(1)
-                    .foregroundStyle(Color.white.opacity(0.72))
-                    .offset(y: 48)
+                    .frame(width: 150 + CGFloat(index) * 33, height: 72 + CGFloat(index) * 26)
+                    .rotationEffect(.degrees(Double(index) * 32))
             }
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [.white, phase.color, phase.color.opacity(0.05)],
+                        center: .topLeading,
+                        startRadius: 2,
+                        endRadius: 65
+                    )
+                )
+                .frame(width: 58, height: 58)
+                .blur(radius: 0.2)
+                .shadow(color: phase.color.opacity(0.8), radius: 25)
+            Circle()
+                .stroke(ConsolePalette.ink.opacity(0.35), lineWidth: 1)
+                .frame(width: 17, height: 17)
+            Text("01")
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .tracking(1)
+                .foregroundStyle(ConsolePalette.muted)
+                .offset(y: 48)
         }
     }
 }
@@ -406,15 +454,15 @@ struct SignalChip: View {
                 .foregroundStyle(Color(hex: 0x73D4FF))
             Text(value)
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white)
+                .foregroundStyle(ConsolePalette.ink)
             Text(label)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.36))
+                .foregroundStyle(ConsolePalette.muted)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.06), in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .background(Color.white.opacity(0.72), in: Capsule())
+        .overlay(Capsule().stroke(ConsolePalette.line, lineWidth: 1))
     }
 }
 
@@ -422,12 +470,18 @@ struct MetricsStrip: View {
     @ObservedObject var model: ConsoleModel
 
     var body: some View {
-        HStack(spacing: 12) {
+        // Keep all four summary tiles on the same grid tracks. An adaptive grid
+        // can create extra narrow tracks when a card asks for an infinite width.
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 12), count: 4),
+            spacing: 12
+        ) {
             MetricTile(icon: "person.2.crop.square.stack.fill", eyebrow: "IDENTITIES", value: "\(model.accounts.count)", caption: "已配置账号")
             MetricTile(icon: "checkmark.seal.fill", eyebrow: "READY", value: "\(model.enabledAccounts.filter { model.hasCredentials(for: $0.id) }.count)", caption: "凭据就绪")
             MetricTile(icon: "chart.line.uptrend.xyaxis", eyebrow: "REQUESTS", value: model.snapshot.map { compactNumber($0.summary?.totalRequests ?? 0) } ?? "—", caption: "已记录请求")
             MetricTile(icon: "creditcard.fill", eyebrow: "BALANCE", value: model.snapshot.map { String(format: "¥%.2f", $0.accounts.reduce(0) { $0 + $1.remainingPrimaryBalance }) } ?? "—", caption: "可用余额")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -449,19 +503,19 @@ struct MetricTile: View {
                 Text(eyebrow)
                     .font(.system(size: 8, weight: .bold, design: .monospaced))
                     .tracking(1.4)
-                    .foregroundStyle(Color.white.opacity(0.32))
+                    .foregroundStyle(ConsolePalette.muted)
             }
             Text(value)
                 .font(.system(size: 25, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(ConsolePalette.ink)
                 .padding(.top, 13)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(caption)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.38))
+                .foregroundStyle(ConsolePalette.muted)
         }
-        .frame(maxWidth: .infinity, minHeight: 112)
+        .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
     }
 }
 
@@ -469,7 +523,7 @@ struct AccountMatrixPanel: View {
     @ObservedObject var model: ConsoleModel
 
     var body: some View {
-        GlassCard {
+        GlassCard(minHeight: 450) {
             PanelHeader(eyebrow: "ACCOUNT MATRIX", title: "账号轨道", detail: "选择哪些身份进入本轮同步") {
                 Button {
                     model.openNewAccount()
@@ -480,7 +534,7 @@ struct AccountMatrixPanel: View {
             }
             if model.accounts.isEmpty {
                 EmptyAccountState { model.openNewAccount() }
-                    .padding(.vertical, 28)
+                    .frame(maxWidth: .infinity, minHeight: 270, alignment: .center)
             } else {
                 VStack(spacing: 10) {
                     ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, profile in
@@ -517,7 +571,7 @@ struct AccountRow: View {
                 HStack(spacing: 8) {
                     Text(profile.label.isEmpty ? profile.name : profile.label)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ConsolePalette.ink)
                     if profile.enabled {
                         Text("LIVE")
                             .font(.system(size: 7, weight: .bold, design: .monospaced))
@@ -530,7 +584,7 @@ struct AccountRow: View {
                 }
                 Text(profile.userID.isEmpty ? "未设置 new-api-user" : "USER \(profile.userID) · \(shortHost(profile.baseURL))")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.35))
+                    .foregroundStyle(ConsolePalette.muted)
                 if let balance = model.balance(for: index) {
                     Text("余额 \(balance.balanceText) · 使用率 \(String(format: "%.1f%%", balance.utilizationRate * 100))")
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
@@ -552,14 +606,14 @@ struct AccountRow: View {
             Button { model.edit(profile) } label: {
                 Image(systemName: "slider.horizontal.2.square")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.48))
+                    .foregroundStyle(ConsolePalette.muted)
             }
             .buttonStyle(.plain)
             .help("编辑账号")
         }
         .padding(12)
-        .background(Color.white.opacity(profile.enabled ? 0.06 : 0.03), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(profile.enabled ? 0.78 : 0.52), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
     }
 }
 
@@ -573,10 +627,10 @@ struct EmptyAccountState: View {
                 .foregroundStyle(Color(hex: 0x73D4FF))
             Text("还没有接入身份")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(ConsolePalette.ink)
             Text("添加第一个账号，把认证交给 Keychain 管理。")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.38))
+                .foregroundStyle(ConsolePalette.muted)
             Button("添加第一个账号", action: action)
                 .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
                 .padding(.top, 3)
@@ -589,17 +643,17 @@ struct SyncControlPanel: View {
     @ObservedObject var model: ConsoleModel
 
     var body: some View {
-        GlassCard {
+        GlassCard(minHeight: 450) {
             PanelHeader(eyebrow: "SYNC CORE", title: "同步引擎", detail: "App 控制本地循环")
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(model.settings.autoSync ? "自动同步已开启" : "自动同步已关闭")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                        .foregroundStyle(ConsolePalette.ink)
                         Text("每 \(model.settings.intervalMinutes) 分钟刷新一次")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.38))
+                            .foregroundStyle(ConsolePalette.muted)
                     }
                     Spacer()
                     Toggle("", isOn: Binding(
@@ -624,7 +678,7 @@ struct SyncControlPanel: View {
                     } label: {
                         Image(systemName: "terminal.fill")
                     }
-                    .buttonStyle(GlassButtonStyle(tint: Color.white.opacity(0.5)))
+                    .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
                     .help("查看日志")
                 }
             }
@@ -637,24 +691,19 @@ struct SyncOrb: View {
     let phase: SyncPhase
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            ZStack {
+        ZStack {
+            Circle()
+                .fill(phase.color.opacity(0.12))
+                .blur(radius: 20)
+            ForEach(0..<2, id: \.self) { index in
                 Circle()
-                    .fill(phase.color.opacity(0.12))
-                    .blur(radius: 20)
-                ForEach(0..<2, id: \.self) { index in
-                    Circle()
-                        .stroke(phase.color.opacity(0.18 - Double(index) * 0.05), lineWidth: 1)
-                        .frame(width: 54 + CGFloat(index) * 27, height: 54 + CGFloat(index) * 27)
-                        .scaleEffect(1 + CGFloat((sin(time * 1.4 + Double(index)) + 1) * 0.04))
-                }
-                Image(systemName: phase == .running ? "arrow.triangle.2.circlepath" : "waveform.path")
-                    .font(.system(size: 23, weight: .light))
-                    .foregroundStyle(phase.color)
-                    .rotationEffect(.degrees(phase == .running ? time * 28 : 0))
-                    .shadow(color: phase.color, radius: 13)
+                    .stroke(phase.color.opacity(0.18 - Double(index) * 0.05), lineWidth: 1)
+                    .frame(width: 54 + CGFloat(index) * 27, height: 54 + CGFloat(index) * 27)
             }
+            Image(systemName: phase == .running ? "arrow.triangle.2.circlepath" : "waveform.path")
+                .font(.system(size: 23, weight: .light))
+                .foregroundStyle(phase.color)
+                .shadow(color: phase.color, radius: 13)
         }
     }
 }
@@ -670,7 +719,7 @@ struct EventLogPanel: View {
                 } label: {
                     Text("打开完整日志")
                 }
-                .buttonStyle(GlassButtonStyle(tint: Color.white.opacity(0.5)))
+                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
             }
             LogView(lines: model.logLines, compact: true)
                 .padding(.top, 15)
@@ -692,7 +741,7 @@ struct AccountsView: View {
                     }
                     .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
                 }
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 13) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 13)], spacing: 13) {
                     ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, profile in
                         AccountDetailCard(model: model, profile: profile, index: index)
                     }
@@ -702,10 +751,10 @@ struct AccountsView: View {
             GlassCard {
                 Text("安全说明")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ConsolePalette.ink)
                 Text("App 不会把 Bearer Token、Cookie 或密码写入 Git。同步时仅在本机 work 目录生成权限为 600 的临时环境文件，并由现有 Node 同步脚本读取。")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.45))
+                    .foregroundStyle(ConsolePalette.muted)
                     .lineSpacing(5)
                     .padding(.top, 8)
             }
@@ -726,24 +775,24 @@ struct AccountDetailCard: View {
                     .frame(width: 10, height: 10)
                 Text(profile.label.isEmpty ? profile.name : profile.label)
                     .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ConsolePalette.ink)
                 Spacer()
                 Button { model.edit(profile) } label: {
                     Image(systemName: "ellipsis")
-                        .foregroundStyle(Color.white.opacity(0.4))
+                        .foregroundStyle(ConsolePalette.muted)
                 }
                 .buttonStyle(.plain)
             }
             HStack(alignment: .lastTextBaseline) {
                 Text(model.balance(for: index)?.balanceText ?? "—")
                     .font(.system(size: 31, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ConsolePalette.ink)
                     .minimumScaleFactor(0.7)
                 Text("余额")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.34))
+                    .foregroundStyle(ConsolePalette.muted)
             }
-            Divider().overlay(Color.white.opacity(0.09))
+            Divider().overlay(ConsolePalette.line)
             HStack {
                 MetadataValue(title: "USER ID", value: profile.userID.isEmpty ? "—" : profile.userID)
                 Spacer()
@@ -755,11 +804,11 @@ struct AccountDetailCard: View {
             ))
             .toggleStyle(.switch)
             .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundStyle(Color.white.opacity(0.6))
+            .foregroundStyle(ConsolePalette.muted)
         }
         .padding(17)
-        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
     }
 }
 
@@ -772,10 +821,10 @@ struct MetadataValue: View {
             Text(title)
                 .font(.system(size: 8, weight: .bold, design: .monospaced))
                 .tracking(1.2)
-                .foregroundStyle(Color.white.opacity(0.28))
+                .foregroundStyle(ConsolePalette.soft)
             Text(value)
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.66))
+                .foregroundStyle(ConsolePalette.ink.opacity(0.78))
         }
     }
 }
@@ -785,52 +834,76 @@ struct SyncCenterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 18) {
-                GlassCard {
-                    PanelHeader(eyebrow: "CONTROL LOOP", title: "同步中枢", detail: "通过 App 调度现有五分钟循环")
-                    HStack(spacing: 18) {
-                        SyncOrb(phase: model.phase)
-                            .frame(width: 120, height: 120)
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(model.phase.title)
-                                .font(.system(size: 29, weight: .bold, design: .rounded))
-                                .foregroundStyle(model.phase.color)
-                            Text(model.eventMessage)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.46))
-                                .lineSpacing(4)
-                            HStack(spacing: 8) {
-                                Button("立即同步") { model.runOnce() }
-                                    .buttonStyle(GlassButtonStyle(tint: Color(hex: 0xF28CB6), filled: true))
-                                Button(model.settings.autoSync ? "暂停" : "启动") {
-                                    model.setAutoSync(!model.settings.autoSync)
-                                }
-                                .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
-                            }
-                            .padding(.top, 5)
-                        }
-                        Spacer()
-                    }
-                    .padding(.top, 18)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 18) {
+                    SyncStatusCard(model: model)
+                        .frame(minWidth: 500, maxWidth: .infinity, alignment: .leading)
+                    RuntimePanel(model: model)
+                        .frame(width: 300, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity)
-                GlassCard {
-                    PanelHeader(eyebrow: "RUNTIME", title: "运行参数", detail: "当前进程")
-                    VStack(alignment: .leading, spacing: 14) {
-                        RuntimeLine(title: "周期", value: "每 \(model.settings.intervalMinutes) 分钟")
-                        RuntimeLine(title: "启用账号", value: "\(model.enabledAccounts.count) 个")
-                        RuntimeLine(title: "项目", value: shortPath(model.settings.projectPath))
-                        RuntimeLine(title: "PID", value: model.existingLoopPID.map(String.init) ?? "未运行")
-                    }
-                    .padding(.top, 18)
+                VStack(spacing: 18) {
+                    SyncStatusCard(model: model)
+                    RuntimePanel(model: model)
                 }
-                .frame(width: 300)
             }
             GlassCard {
                 PanelHeader(eyebrow: "RAW EVENT STREAM", title: "同步日志", detail: "自动滚动到最新事件")
                 LogView(lines: model.logLines)
                     .padding(.top, 15)
             }
+        }
+    }
+}
+
+struct SyncStatusCard: View {
+    @ObservedObject var model: ConsoleModel
+
+    var body: some View {
+        GlassCard {
+            PanelHeader(eyebrow: "CONTROL LOOP", title: "同步中枢", detail: "通过 App 调度现有五分钟循环")
+            HStack(spacing: 18) {
+                SyncOrb(phase: model.phase)
+                    .frame(width: 120, height: 120)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.phase.title)
+                        .font(.system(size: 29, weight: .bold, design: .rounded))
+                        .foregroundStyle(model.phase.color)
+                        .minimumScaleFactor(0.7)
+                    Text(model.eventMessage)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(ConsolePalette.muted)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Button("立即同步") { model.runOnce() }
+                            .buttonStyle(GlassButtonStyle(tint: Color(hex: 0xF28CB6), filled: true))
+                        Button(model.settings.autoSync ? "暂停" : "启动") {
+                            model.setAutoSync(!model.settings.autoSync)
+                        }
+                        .buttonStyle(GlassButtonStyle(tint: Color(hex: 0x73D4FF)))
+                    }
+                    .padding(.top, 5)
+                }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.top, 18)
+        }
+    }
+}
+
+struct RuntimePanel: View {
+    @ObservedObject var model: ConsoleModel
+
+    var body: some View {
+        GlassCard {
+            PanelHeader(eyebrow: "RUNTIME", title: "运行参数", detail: "当前进程")
+            VStack(alignment: .leading, spacing: 14) {
+                RuntimeLine(title: "周期", value: "每 \(model.settings.intervalMinutes) 分钟")
+                RuntimeLine(title: "启用账号", value: "\(model.enabledAccounts.count) 个")
+                RuntimeLine(title: "项目", value: shortPath(model.settings.projectPath))
+                RuntimeLine(title: "PID", value: model.existingLoopPID.map(String.init) ?? "未运行")
+            }
+            .padding(.top, 18)
         }
     }
 }
@@ -843,13 +916,15 @@ struct RuntimeLine: View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.34))
+                .foregroundStyle(ConsolePalette.muted)
             Spacer()
             Text(value)
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.75))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .foregroundStyle(ConsolePalette.ink.opacity(0.78))
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -866,7 +941,7 @@ struct SettingsView: View {
                         HStack {
                             Text(model.settings.projectPath)
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(Color.white.opacity(0.55))
+                                .foregroundStyle(ConsolePalette.muted)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer()
@@ -896,14 +971,14 @@ struct SettingsView: View {
                         ))
                         .textFieldStyle(.plain)
                         .padding(10)
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .frame(maxWidth: 330)
                     }
                     SettingRow(title: "Git SSH 私钥", detail: "用于自动 push；不会写入凭据 JSON") {
                         HStack {
                             Text(model.settings.sshKeyPath.isEmpty ? "未指定" : shortPath(model.settings.sshKeyPath))
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(Color.white.opacity(0.5))
+                                .foregroundStyle(ConsolePalette.muted)
                                 .lineLimit(1)
                             Spacer()
                             Button("选择") { model.chooseSSHKey() }
@@ -921,10 +996,10 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("凭据保护")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(ConsolePalette.ink)
                         Text("Bearer Token、Cookie、用户名和密码只保存到 macOS Keychain。生成运行环境时使用 600 权限，停止同步后会删除临时文件。")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.42))
+                            .foregroundStyle(ConsolePalette.muted)
                             .lineSpacing(5)
                     }
                 }
@@ -943,10 +1018,10 @@ struct SettingRow<Content: View>: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ConsolePalette.ink)
                 Text(detail)
                     .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.34))
+                    .foregroundStyle(ConsolePalette.muted)
             }
             Spacer()
             content
@@ -967,13 +1042,13 @@ struct AccountEditorView: View {
 
     var body: some View {
         ZStack {
-            Color(hex: 0x090B12).ignoresSafeArea()
+            ConsolePalette.canvas.ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(draft.profile.name == "新账号" ? "接入新身份" : "编辑身份")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(ConsolePalette.ink)
                         Text("CREDENTIAL INTAKE")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .tracking(2)
@@ -982,9 +1057,9 @@ struct AccountEditorView: View {
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
-                            .foregroundStyle(Color.white.opacity(0.5))
+                            .foregroundStyle(ConsolePalette.muted)
                             .frame(width: 30, height: 30)
-                            .background(Color.white.opacity(0.07), in: Circle())
+                            .background(Color.white.opacity(0.84), in: Circle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -1014,21 +1089,21 @@ struct AccountEditorView: View {
                             ZStack(alignment: .topLeading) {
                                 TextEditor(text: $draft.secret.cookie)
                                     .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.75))
+                                    .foregroundStyle(ConsolePalette.ink.opacity(0.78))
                                     .scrollContentBackground(.hidden)
                                     .padding(8)
                                 if draft.secret.cookie.isEmpty {
                                     Text("session=...; ph_phc_...")
                                         .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.white.opacity(0.22))
+                                        .foregroundStyle(ConsolePalette.soft)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 13)
                                         .allowsHitTesting(false)
                                 }
                             }
                             .frame(height: 92)
-                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                            .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
                         }
                         HStack(spacing: 14) {
                             EditorField(title: "USERNAME", hint: "可选：让脚本登录") {
@@ -1044,7 +1119,7 @@ struct AccountEditorView: View {
                             Toggle("默认参与自动同步", isOn: $draft.profile.enabled)
                                 .toggleStyle(.switch)
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.62))
+                                .foregroundStyle(ConsolePalette.muted)
                             Spacer()
                             Text("凭据只会进入 macOS Keychain")
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -1057,7 +1132,7 @@ struct AccountEditorView: View {
                 HStack {
                     Spacer()
                     Button("取消") { dismiss() }
-                        .buttonStyle(GlassButtonStyle(tint: Color.white.opacity(0.45)))
+                        .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
                     Button("保存并接入") {
                         onSave(draft)
                         dismiss()
@@ -1084,11 +1159,11 @@ struct EditorField<Content: View>: View {
                 Text(title)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .tracking(1.4)
-                    .foregroundStyle(Color.white.opacity(0.58))
+                    .foregroundStyle(ConsolePalette.muted)
                 Spacer()
                 Text(hint)
                     .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.23))
+                    .foregroundStyle(ConsolePalette.soft)
                     .lineLimit(1)
             }
             content
@@ -1108,7 +1183,7 @@ struct LogView: View {
                     if lines.isEmpty {
                         Text("等待同步事件……")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.3))
+                            .foregroundStyle(ConsolePalette.muted)
                             .padding(.vertical, 20)
                     } else {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
@@ -1124,8 +1199,8 @@ struct LogView: View {
                 .padding(14)
             }
             .frame(maxWidth: .infinity, minHeight: compact ? 116 : 310, maxHeight: compact ? 150 : 400)
-            .background(Color.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 1))
+            .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
             .onChange(of: lines.count) { _ in
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("tail", anchor: .bottom) }
             }
@@ -1142,7 +1217,7 @@ struct LogView: View {
         if line.contains("Starting") || line.contains("Fetched") {
             return Color(hex: 0x73D4FF).opacity(0.9)
         }
-        return Color.white.opacity(0.45)
+        return ConsolePalette.muted
     }
 }
 
@@ -1168,10 +1243,10 @@ struct PanelHeader<Accessory: View>: View {
                     .foregroundStyle(Color(hex: 0x73D4FF).opacity(0.78))
                 Text(title)
                     .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ConsolePalette.ink)
                 Text(detail)
                     .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.33))
+                    .foregroundStyle(ConsolePalette.muted)
             }
             Spacer()
             accessory
@@ -1181,30 +1256,39 @@ struct PanelHeader<Accessory: View>: View {
 
 struct GlassCard<Content: View>: View {
     let padding: CGFloat
+    let minHeight: CGFloat
     @ViewBuilder let content: Content
 
-    init(padding: CGFloat = 21, @ViewBuilder content: () -> Content) {
+    init(padding: CGFloat = 21, minHeight: CGFloat = 0, @ViewBuilder content: () -> Content) {
         self.padding = padding
+        self.minHeight = minHeight
         self.content = content()
     }
 
     var body: some View {
-        content
+        // Group builder children before applying the card modifiers. Without
+        // this wrapper, grid parents can treat the tuple's children as
+        // separate layout items and split a card into unrelated fragments.
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
             .padding(padding)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
-            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+            .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 25, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.17), Color.white.opacity(0.04), Color(hex: 0x73D4FF).opacity(0.08)],
+                            colors: [Color.white.opacity(0.95), ConsolePalette.line, ConsolePalette.cyan.opacity(0.2)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
                         lineWidth: 1
                     )
             }
-            .shadow(color: Color.black.opacity(0.26), radius: 24, y: 13)
+            .shadow(color: Color(hex: 0x6B7C99).opacity(0.18), radius: 24, y: 13)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1215,7 +1299,7 @@ struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 10, weight: .bold, design: .rounded))
-            .foregroundStyle(filled ? Color(hex: 0x0A0D14) : tint)
+            .foregroundStyle(filled ? Color.white : tint)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(filled ? tint : tint.opacity(0.1), in: Capsule())
@@ -1228,38 +1312,35 @@ struct GlassButtonStyle: ButtonStyle {
 
 struct LiquidBackdrop: View {
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            ZStack {
-                Color(hex: 0x070910)
-                Circle()
-                    .fill(Color(hex: 0x164A77).opacity(0.28))
-                    .frame(width: 520, height: 520)
-                    .blur(radius: 90)
-                    .offset(x: CGFloat(sin(time * 0.12)) * 220 - 300, y: CGFloat(cos(time * 0.1)) * 140 - 260)
-                Circle()
-                    .fill(Color(hex: 0x7C244F).opacity(0.2))
-                    .frame(width: 460, height: 460)
-                    .blur(radius: 100)
-                    .offset(x: CGFloat(cos(time * 0.09)) * 210 + 310, y: CGFloat(sin(time * 0.13)) * 150 + 250)
-                Circle()
-                    .fill(Color(hex: 0x40358D).opacity(0.14))
-                    .frame(width: 380, height: 380)
-                    .blur(radius: 110)
-                    .offset(x: CGFloat(sin(time * 0.15)) * 150 + 180, y: CGFloat(cos(time * 0.11)) * 130 - 40)
-                Canvas { context, size in
-                    var grid = Path()
-                    let step: CGFloat = 72
-                    stride(from: 0, through: size.width, by: step).forEach { x in
-                        grid.move(to: CGPoint(x: x, y: 0))
-                        grid.addLine(to: CGPoint(x: x, y: size.height))
-                    }
-                    stride(from: 0, through: size.height, by: step).forEach { y in
-                        grid.move(to: CGPoint(x: 0, y: y))
-                        grid.addLine(to: CGPoint(x: size.width, y: y))
-                    }
-                    context.stroke(grid, with: .color(Color.white.opacity(0.025)), lineWidth: 1)
+        ZStack {
+            ConsolePalette.canvas
+            Circle()
+                .fill(ConsolePalette.cyan.opacity(0.18))
+                .frame(width: 520, height: 520)
+                .blur(radius: 90)
+                .offset(x: -300, y: -260)
+            Circle()
+                .fill(ConsolePalette.pink.opacity(0.16))
+                .frame(width: 460, height: 460)
+                .blur(radius: 100)
+                .offset(x: 310, y: 250)
+            Circle()
+                .fill(ConsolePalette.blue.opacity(0.12))
+                .frame(width: 380, height: 380)
+                .blur(radius: 110)
+                .offset(x: 180, y: -40)
+            Canvas { context, size in
+                var grid = Path()
+                let step: CGFloat = 72
+                stride(from: 0, through: size.width, by: step).forEach { x in
+                    grid.move(to: CGPoint(x: x, y: 0))
+                    grid.addLine(to: CGPoint(x: x, y: size.height))
                 }
+                stride(from: 0, through: size.height, by: step).forEach { y in
+                    grid.move(to: CGPoint(x: 0, y: y))
+                    grid.addLine(to: CGPoint(x: size.width, y: y))
+                }
+                context.stroke(grid, with: .color(ConsolePalette.ink.opacity(0.05)), lineWidth: 1)
             }
         }
         .ignoresSafeArea()
@@ -1271,10 +1352,10 @@ private extension View {
         self
             .textFieldStyle(.plain)
             .font(.system(size: 11, weight: .medium, design: .monospaced))
-            .foregroundStyle(Color.white.opacity(0.76))
+            .foregroundStyle(ConsolePalette.ink.opacity(0.78))
             .padding(10)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            .background(Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
     }
 }
 

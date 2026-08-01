@@ -7,6 +7,11 @@ PID_FILE="${ROOT_DIR}/work/sync-loop.pid"
 LOCK_DIR="${ROOT_DIR}/work/sync-loop.lock"
 LOG_FILE="${ROOT_DIR}/work/sync-loop.log"
 ENV_FILE="${SYNC_ENV_FILE:-${ROOT_DIR}/work/sync.env}"
+SYNC_INTERVAL_SECONDS="${SYNC_INTERVAL_SECONDS:-300}"
+
+if ! [[ "$SYNC_INTERVAL_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  SYNC_INTERVAL_SECONDS=300
+fi
 
 mkdir -p "${ROOT_DIR}/work"
 
@@ -101,5 +106,5 @@ while true; do
     log_message "Sync cycle skipped"
   fi
 
-  sleep 300
+  sleep "$SYNC_INTERVAL_SECONDS"
 done
