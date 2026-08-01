@@ -14,6 +14,23 @@ function sleep(ms) {
   });
 }
 
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
 function parseCookieString(cookieString) {
   const cookies = new Map();
 
@@ -533,11 +550,31 @@ export class ForApiClient {
   }
 
   async fetchAllUsageLogsForWindow({ scope, pageSize, startTimestamp, endTimestamp, type = 2 }) {
-    const items = [];
-    let page = 1;
-    let total = Infinity;
+    const firstResponse = await this.fetchUsageLogsPage({
+      scope,
+      page: 1,
+      pageSize,
+      startTimestamp,
+      endTimestamp,
+      type,
+    });
 
-    while (items.length < total) {
+    if (!firstResponse?.success) {
+      throw new Error(firstResponse?.message || "Usage log request failed on page 1.");
+    }
+
+    const firstPageItems = Array.isArray(firstResponse?.data?.items)
+      ? firstResponse.data.items
+      : [];
+    const total = toNumber(firstResponse?.data?.total, firstPageItems.length);
+    const pageCount = Math.ceil(total / pageSize);
+
+    if (firstPageItems.length === 0 || pageCount <= 1) {
+      return firstPageItems;
+    }
+
+    const remainingPages = Array.from({ length: pageCount - 1 }, (_, index) => index + 2);
+    const remainingItems = await mapWithConcurrency(remainingPages, 4, async (page) => {
       const response = await this.fetchUsageLogsPage({
         scope,
         page,
@@ -551,19 +588,9 @@ export class ForApiClient {
         throw new Error(response?.message || `Usage log request failed on page ${page}.`);
       }
 
-      const pageItems = Array.isArray(response?.data?.items) ? response.data.items : [];
-      const pageTotal = toNumber(response?.data?.total, pageItems.length);
+      return Array.isArray(response?.data?.items) ? response.data.items : [];
+    });
 
-      total = pageTotal;
-      items.push(...pageItems);
-
-      if (pageItems.length === 0 || items.length >= total) {
-        break;
-      }
-
-      page += 1;
-    }
-
-    return items;
+    return [...firstPageItems, ...remainingItems.flat()].slice(0, total);
   }
 }
