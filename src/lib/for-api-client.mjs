@@ -29,6 +29,15 @@ function parseCookieString(cookieString) {
   return cookies;
 }
 
+function normalizeAuthorization(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return /^Bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
+}
+
 function extractSetCookies(headers) {
   if (typeof headers.getSetCookie === "function") {
     return headers.getSetCookie();
@@ -125,6 +134,7 @@ export class ForApiClient {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.auth = auth;
     this.cookies = parseCookieString(auth.cookie);
+    this.authorization = normalizeAuthorization(auth.authorization);
     this.hasLoggedIn = false;
     this.userId = String(auth.userId || "").trim();
   }
@@ -297,6 +307,10 @@ export class ForApiClient {
       headers["New-Api-User"] = this.userId;
     }
 
+    if (this.authorization) {
+      headers.Authorization = this.authorization;
+    }
+
     let status;
     let text;
 
@@ -426,7 +440,7 @@ export class ForApiClient {
 
     if (!this.auth.username || !this.auth.password) {
       throw new Error(
-        "Missing authentication. Set FOROPENCODE_COOKIE or FOROPENCODE_USERNAME/FOROPENCODE_PASSWORD.",
+        "Missing authentication. Set FOROPENCODE_AUTHORIZATION, FOROPENCODE_ACCESS_TOKEN, FOROPENCODE_COOKIE, or FOROPENCODE_USERNAME/FOROPENCODE_PASSWORD.",
       );
     }
 
@@ -458,7 +472,7 @@ export class ForApiClient {
   }
 
   async ensureAuthenticated() {
-    if (this.cookies.size > 0) {
+    if (this.cookies.size > 0 || this.authorization) {
       return;
     }
 

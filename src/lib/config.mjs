@@ -103,6 +103,131 @@ function normalizePeople(config) {
     .filter((entry) => entry.tokenNames.length > 0);
 }
 
+function parseAccountsJson(raw) {
+  if (!raw) {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`FOROPENCODE_ACCOUNTS_JSON is not valid JSON: ${error.message}`);
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("FOROPENCODE_ACCOUNTS_JSON must be a non-empty JSON array.");
+  }
+
+  return parsed;
+}
+
+function normalizeAccount(entry, index, defaults) {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const sourceAuth = source.auth && typeof source.auth === "object" ? source.auth : source;
+  const id = String(source.id || source.accountId || `account-${index + 1}`).trim();
+
+  return {
+    id: id || `account-${index + 1}`,
+    label: String(source.label || source.displayName || `账号 ${index + 1}`).trim(),
+    baseUrl: String(source.baseUrl || defaults.baseUrl).replace(/\/+$/, ""),
+    scope: resolveScope(source.scope, defaults.scope),
+    auth: {
+      cookie: String(sourceAuth.cookie || ""),
+      authorization: String(sourceAuth.authorization || sourceAuth.accessToken || ""),
+      userId: String(sourceAuth.userId || sourceAuth.newApiUser || ""),
+      username: String(sourceAuth.username || ""),
+      password: String(sourceAuth.password || ""),
+      turnstileToken: String(sourceAuth.turnstileToken || ""),
+    },
+  };
+}
+
+function buildRuntimeAccounts(env, defaults) {
+  const fromJson = parseAccountsJson(env.FOROPENCODE_ACCOUNTS_JSON);
+  if (fromJson) {
+    const seenIds = new Set();
+    return fromJson.map((entry, index) => {
+      const account = normalizeAccount(entry, index, defaults);
+      if (seenIds.has(account.id)) {
+        throw new Error(`Duplicate account id in FOROPENCODE_ACCOUNTS_JSON: ${account.id}`);
+      }
+      seenIds.add(account.id);
+      return account;
+    });
+  }
+
+  const legacyAuth = {
+    cookie: env.FOROPENCODE_COOKIE || "",
+    authorization:
+      env.FOROPENCODE_AUTHORIZATION ||
+      (env.FOROPENCODE_ACCESS_TOKEN ? `Bearer ${env.FOROPENCODE_ACCESS_TOKEN}` : ""),
+    userId: env.FOROPENCODE_USER_ID || env.FOROPENCODE_NEW_API_USER || "",
+    username: env.FOROPENCODE_USERNAME || "",
+    password: env.FOROPENCODE_PASSWORD || "",
+    turnstileToken: env.FOROPENCODE_TURNSTILE_TOKEN || "",
+  };
+
+  const accounts = [
+    normalizeAccount(
+      {
+        id: env.FOROPENCODE_ACCOUNT_1_ID || "account-1",
+        label: env.FOROPENCODE_ACCOUNT_1_LABEL || "账号 1",
+        baseUrl: env.FOROPENCODE_ACCOUNT_1_BASE_URL || defaults.baseUrl,
+        scope: env.FOROPENCODE_ACCOUNT_1_SCOPE || defaults.scope,
+        auth: {
+          cookie: env.FOROPENCODE_ACCOUNT_1_COOKIE || legacyAuth.cookie,
+          authorization: env.FOROPENCODE_ACCOUNT_1_AUTHORIZATION || legacyAuth.authorization,
+          userId: env.FOROPENCODE_ACCOUNT_1_USER_ID || legacyAuth.userId,
+          username: env.FOROPENCODE_ACCOUNT_1_USERNAME || legacyAuth.username,
+          password: env.FOROPENCODE_ACCOUNT_1_PASSWORD || legacyAuth.password,
+          turnstileToken: env.FOROPENCODE_ACCOUNT_1_TURNSTILE_TOKEN || legacyAuth.turnstileToken,
+        },
+      },
+      0,
+      defaults,
+    ),
+  ];
+
+  const hasSecondAccount = [
+    env.FOROPENCODE_ACCOUNT_2_COOKIE,
+    env.FOROPENCODE_ACCOUNT_2_AUTHORIZATION,
+    env.FOROPENCODE_ACCOUNT_2_ACCESS_TOKEN,
+    env.FOROPENCODE_ACCOUNT_2_USER_ID,
+    env.FOROPENCODE_ACCOUNT_2_USERNAME,
+    env.FOROPENCODE_ACCOUNT_2_PASSWORD,
+  ].some(Boolean);
+
+  if (hasSecondAccount) {
+    accounts.push(
+      normalizeAccount(
+        {
+          id: env.FOROPENCODE_ACCOUNT_2_ID || "account-2",
+          label: env.FOROPENCODE_ACCOUNT_2_LABEL || "账号 2",
+          baseUrl: env.FOROPENCODE_ACCOUNT_2_BASE_URL || defaults.baseUrl,
+          scope: env.FOROPENCODE_ACCOUNT_2_SCOPE || defaults.scope,
+          auth: {
+            cookie: env.FOROPENCODE_ACCOUNT_2_COOKIE || "",
+            authorization:
+              env.FOROPENCODE_ACCOUNT_2_AUTHORIZATION ||
+              (env.FOROPENCODE_ACCOUNT_2_ACCESS_TOKEN
+                ? `Bearer ${env.FOROPENCODE_ACCOUNT_2_ACCESS_TOKEN}`
+                : ""),
+            userId: env.FOROPENCODE_ACCOUNT_2_USER_ID || "",
+            username: env.FOROPENCODE_ACCOUNT_2_USERNAME || "",
+            password: env.FOROPENCODE_ACCOUNT_2_PASSWORD || "",
+            turnstileToken: env.FOROPENCODE_ACCOUNT_2_TURNSTILE_TOKEN || "",
+          },
+        },
+        1,
+        defaults,
+      ),
+    );
+  }
+
+  return accounts;
+}
+
 export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {}) {
   const fileConfig = await loadPeopleFileConfig(cwd);
 
@@ -112,10 +237,24 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
   const startDate = resolveDate(env.USAGE_START_DATE, timeZone);
   const endDate = resolveDate(env.USAGE_END_DATE, timeZone);
 
+  const baseUrl = env.FOROPENCODE_BASE_URL || fileConfig.baseUrl || DEFAULT_BASE_URL;
+  const scope = resolveScope(env.FOROPENCODE_SCOPE, fileConfig.scope);
+  const legacyAuth = {
+    cookie: env.FOROPENCODE_COOKIE || "",
+    authorization:
+      env.FOROPENCODE_AUTHORIZATION ||
+      (env.FOROPENCODE_ACCESS_TOKEN ? `Bearer ${env.FOROPENCODE_ACCESS_TOKEN}` : ""),
+    userId: env.FOROPENCODE_USER_ID || env.FOROPENCODE_NEW_API_USER || "",
+    username: env.FOROPENCODE_USERNAME || "",
+    password: env.FOROPENCODE_PASSWORD || "",
+    turnstileToken: env.FOROPENCODE_TURNSTILE_TOKEN || "",
+  };
+  const accounts = buildRuntimeAccounts(env, { baseUrl, scope });
+
   return {
     cwd,
-    baseUrl: env.FOROPENCODE_BASE_URL || fileConfig.baseUrl || DEFAULT_BASE_URL,
-    scope: resolveScope(env.FOROPENCODE_SCOPE, fileConfig.scope),
+    baseUrl,
+    scope,
     timeZone,
     lookbackDays,
     refreshDays,
@@ -124,13 +263,8 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     pageSize: resolvePageSize(env.USAGE_PAGE_SIZE, fileConfig.pageSize),
     outputFile: env.OUTPUT_FILE || fileConfig.outputFile || DEFAULT_OUTPUT_FILE,
     cacheFile: env.USAGE_CACHE_FILE || fileConfig.cacheFile || DEFAULT_CACHE_FILE,
-    auth: {
-      cookie: env.FOROPENCODE_COOKIE || "",
-      userId: env.FOROPENCODE_USER_ID || env.FOROPENCODE_NEW_API_USER || "",
-      username: env.FOROPENCODE_USERNAME || "",
-      password: env.FOROPENCODE_PASSWORD || "",
-      turnstileToken: env.FOROPENCODE_TURNSTILE_TOKEN || "",
-    },
+    auth: legacyAuth,
+    accounts,
     people: normalizePeople(fileConfig),
   };
 }

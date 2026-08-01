@@ -18,8 +18,53 @@ test("loadRuntimeConfig reads FOROPENCODE_USER_ID for New-Api-User auth", async 
   });
 
   assert.equal(runtime.auth.cookie, "session=example");
+  assert.equal(runtime.auth.authorization, "");
   assert.equal(runtime.auth.userId, "1143");
   assert.equal(runtime.refreshDays, 2);
+});
+
+test("loadRuntimeConfig supports a full authorization header or a raw access token", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-config-auth-"));
+
+  const fullHeader = await loadRuntimeConfig({
+    cwd,
+    env: {
+      FOROPENCODE_AUTHORIZATION: "Bearer example-token",
+    },
+  });
+  const rawToken = await loadRuntimeConfig({
+    cwd,
+    env: {
+      FOROPENCODE_ACCESS_TOKEN: "example-token",
+    },
+  });
+
+  assert.equal(fullHeader.auth.authorization, "Bearer example-token");
+  assert.equal(rawToken.auth.authorization, "Bearer example-token");
+});
+
+test("loadRuntimeConfig supports two account credentials without putting them in repo config", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-config-accounts-"));
+
+  const runtime = await loadRuntimeConfig({
+    cwd,
+    env: {
+      FOROPENCODE_AUTHORIZATION: "Bearer account-one",
+      FOROPENCODE_USER_ID: "1479",
+      FOROPENCODE_ACCOUNT_2_AUTHORIZATION: "Bearer account-two",
+      FOROPENCODE_ACCOUNT_2_USER_ID: "1143",
+      FOROPENCODE_ACCOUNT_2_LABEL: "备用账号",
+    },
+  });
+
+  assert.deepEqual(
+    runtime.accounts.map((account) => ({ id: account.id, label: account.label, userId: account.auth.userId })),
+    [
+      { id: "account-1", label: "账号 1", userId: "1479" },
+      { id: "account-2", label: "备用账号", userId: "1143" },
+    ],
+  );
+  assert.equal(runtime.accounts[1].auth.authorization, "Bearer account-two");
 });
 
 test("loadRuntimeConfig limits the refresh window to the configured lookback", async () => {

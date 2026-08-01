@@ -62,6 +62,18 @@ function buildAccountSnapshot(account, currency) {
   };
 }
 
+function buildAccountDashboardEntry(entry = {}) {
+  const currency = buildCurrencyStatus(entry.status ?? {});
+  const snapshot = buildAccountSnapshot(entry.account ?? {}, currency);
+
+  return {
+    id: String(entry.id || "account-1"),
+    label: String(entry.label || snapshot.displayName || entry.id || "账号"),
+    ...snapshot,
+    gptPlus: buildGptPlusSnapshot(entry.groups),
+  };
+}
+
 function buildGptPlusSnapshot(groups) {
   const group = groups?.gpt_plus ?? {};
   const ratio = toNumber(group?.ratio, Number.NaN);
@@ -207,8 +219,13 @@ export function buildDayWindow(date, timeZone) {
   };
 }
 
-export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, account, groups }) {
+export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, account, groups, accounts = [] }) {
   const currency = buildCurrencyStatus(status ?? {});
+  const accountEntries = accounts.length
+    ? accounts.map(buildAccountDashboardEntry)
+    : account
+      ? [buildAccountDashboardEntry({ id: "account-1", label: "账号 1", account, status, groups })]
+      : [];
 
   return {
     generatedAt: new Date().toISOString(),
@@ -241,7 +258,8 @@ export function createPlaceholderPayload({ baseUrl, scope, timeZone, status, acc
       customCurrencySymbol: currency.customCurrencySymbol,
       customCurrencyExchangeRate: currency.customCurrencyExchangeRate,
     },
-    account: buildAccountSnapshot(account, currency),
+    account: accountEntries[0] ?? buildAccountSnapshot(account, currency),
+    accounts: accountEntries,
     summary: {
       totalDays: 0,
       totalRequests: 0,
@@ -340,7 +358,93 @@ export function buildDailyUsageSnapshot({ date, logs, config, status }) {
   };
 }
 
-export function buildDashboardPayloadFromDays({ days: sourceDays, config, status, account, groups }) {
+function mergeSerializedModels(modelMap, models = []) {
+  for (const model of models) {
+    const name = String(model?.name || "Unknown Model");
+    if (!modelMap.has(name)) {
+      modelMap.set(name, {
+        name,
+        metrics: createMetricAccumulator(),
+      });
+    }
+    mergeMetrics(modelMap.get(name).metrics, model);
+  }
+}
+
+export function mergeDailyUsageSnapshots({ date, snapshots = [] }) {
+  const dayTotals = createMetricAccumulator();
+  const peopleMap = new Map();
+  const modelMap = new Map();
+
+  for (const snapshot of snapshots) {
+    if (!snapshot) {
+      continue;
+    }
+
+    mergeMetrics(dayTotals, snapshot);
+    mergeSerializedModels(modelMap, snapshot.models);
+
+    for (const entry of snapshot.people || []) {
+      const personId = String(entry.personId || slugify(entry.displayName || "Unassigned"));
+      if (!peopleMap.has(personId)) {
+        peopleMap.set(personId, {
+          personId,
+          displayName: String(entry.displayName || personId),
+          tokenNames: new Set(),
+          metrics: createMetricAccumulator(),
+          modelMap: new Map(),
+        });
+      }
+
+      const person = peopleMap.get(personId);
+      mergeMetrics(person.metrics, entry);
+      for (const tokenName of entry.tokenNames || []) {
+        person.tokenNames.add(tokenName);
+      }
+      mergeSerializedModels(person.modelMap, entry.models);
+    }
+  }
+
+  const people = [...peopleMap.values()]
+    .map((entry) => ({
+      personId: entry.personId,
+      displayName: entry.displayName,
+      tokenNames: unique([...entry.tokenNames]),
+      requests: entry.metrics.requests,
+      rawQuota: entry.metrics.rawQuota,
+      primaryCost: Number(entry.metrics.primaryCost.toFixed(6)),
+      secondaryCost: Number(entry.metrics.secondaryCost.toFixed(6)),
+      promptTokens: entry.metrics.promptTokens,
+      completionTokens: entry.metrics.completionTokens,
+      cacheReadTokens: entry.metrics.cacheReadTokens,
+      cacheWriteTokens: entry.metrics.cacheWriteTokens,
+      models: finalizeModelMap(entry.modelMap),
+    }))
+    .sort((left, right) => right.primaryCost - left.primaryCost || right.requests - left.requests);
+
+  return {
+    date,
+    requests: dayTotals.requests,
+    rawQuota: dayTotals.rawQuota,
+    primaryCost: Number(dayTotals.primaryCost.toFixed(6)),
+    secondaryCost: Number(dayTotals.secondaryCost.toFixed(6)),
+    promptTokens: dayTotals.promptTokens,
+    completionTokens: dayTotals.completionTokens,
+    cacheReadTokens: dayTotals.cacheReadTokens,
+    cacheWriteTokens: dayTotals.cacheWriteTokens,
+    people,
+    models: finalizeModelMap(modelMap),
+  };
+}
+
+export function buildDashboardPayloadFromDays({
+  days: sourceDays,
+  config,
+  status,
+  account,
+  groups,
+  accounts = [],
+}) {
   const currency = buildCurrencyStatus(status ?? {});
   const peopleMap = new Map();
   const warnings = [];
@@ -420,6 +524,12 @@ export function buildDashboardPayloadFromDays({ days: sourceDays, config, status
     })),
   );
 
+  const accountEntries = accounts.length
+    ? accounts.map(buildAccountDashboardEntry)
+    : account
+      ? [buildAccountDashboardEntry({ id: "account-1", label: "账号 1", account, status, groups })]
+      : [];
+
   return {
     generatedAt: new Date().toISOString(),
     source: {
@@ -451,7 +561,8 @@ export function buildDashboardPayloadFromDays({ days: sourceDays, config, status
       customCurrencySymbol: currency.customCurrencySymbol,
       customCurrencyExchangeRate: currency.customCurrencyExchangeRate,
     },
-    account: buildAccountSnapshot(account, currency),
+    account: accountEntries[0] ?? buildAccountSnapshot(account, currency),
+    accounts: accountEntries,
     summary: {
       totalDays: days.length,
       totalRequests: sumBy(days, (day) => day.requests),
@@ -469,10 +580,10 @@ export function buildDashboardPayloadFromDays({ days: sourceDays, config, status
   };
 }
 
-export function buildDashboardPayload({ dayResults, config, status, account, groups }) {
+export function buildDashboardPayload({ dayResults, config, status, account, groups, accounts = [] }) {
   const days = dayResults.map(({ date, logs }) =>
     buildDailyUsageSnapshot({ date, logs, config, status }),
   );
 
-  return buildDashboardPayloadFromDays({ days, config, status, account, groups });
+  return buildDashboardPayloadFromDays({ days, config, status, account, groups, accounts });
 }

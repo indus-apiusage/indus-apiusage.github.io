@@ -7,11 +7,13 @@ import {
   buildDateRange,
   buildDayWindow,
   createPlaceholderPayload,
+  mergeDailyUsageSnapshots,
 } from "../src/lib/aggregate.mjs";
 import { loadRuntimeConfig } from "../src/lib/config.mjs";
 import { ForApiClient } from "../src/lib/for-api-client.mjs";
 import {
   buildUsageCacheIdentity,
+  getAccountUsageCache,
   normalizeUsageCache,
   pruneUsageCache,
   selectDatesToRefresh,
@@ -88,20 +90,62 @@ function getFirstDashboardDate(dayMap) {
   return [...dayMap.keys()].sort()[0] ?? null;
 }
 
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
+async function loadAccountSnapshot(account) {
+  const client = new ForApiClient({
+    baseUrl: account.baseUrl,
+    auth: account.auth,
+  });
+  const [statusResponse, selfResponse, groupsResponse] = await Promise.all([
+    client.fetchStatus(),
+    client.fetchSelf(),
+    client.fetchSelfGroups(),
+  ]);
+
+  return {
+    account,
+    status: statusResponse?.data ?? {},
+    accountData: selfResponse?.data ?? {},
+    groups: groupsResponse?.data ?? {},
+    client,
+  };
+}
+
 async function main() {
   const runtime = await loadRuntimeConfig();
   const outputPath = path.resolve(runtime.cwd, runtime.outputFile);
-  const client = new ForApiClient({
-    baseUrl: runtime.baseUrl,
-    auth: runtime.auth,
-  });
-
-  const statusResponse = await client.fetchStatus();
-  const status = statusResponse?.data ?? {};
-  const selfResponse = await client.fetchSelf();
-  const account = selfResponse?.data ?? {};
-  const groupsResponse = await client.fetchSelfGroups();
-  const groups = groupsResponse?.data ?? {};
+  const accountSnapshots = await Promise.all(runtime.accounts.map(loadAccountSnapshot));
+  const primarySnapshot = accountSnapshots[0] ?? {
+    account: {
+      id: "account-1",
+      label: "账号 1",
+      baseUrl: runtime.baseUrl,
+      scope: runtime.scope,
+      auth: runtime.auth,
+    },
+    status: {},
+    accountData: {},
+    groups: {},
+  };
+  const status = primarySnapshot.status;
+  const account = primarySnapshot.accountData;
+  const groups = primarySnapshot.groups;
 
   if (hasFlag("--placeholder")) {
     const placeholder = createPlaceholderPayload({
@@ -111,6 +155,13 @@ async function main() {
       status,
       account,
       groups,
+      accounts: accountSnapshots.map((snapshot) => ({
+        id: snapshot.account.id,
+        label: snapshot.account.label,
+        status: snapshot.status,
+        account: snapshot.accountData,
+        groups: snapshot.groups,
+      })),
     });
 
     await writeJson(outputPath, placeholder);
@@ -121,69 +172,80 @@ async function main() {
   const dates = buildDateRange(runtime);
   const cachePath = path.resolve(runtime.cwd, runtime.cacheFile);
   const cacheIdentity = buildUsageCacheIdentity(runtime);
-  const cache = normalizeUsageCache(await readJsonOrNull(cachePath), cacheIdentity);
-  const existingDayMap = getExistingDayMap(await readJsonOrNull(outputPath), cacheIdentity);
-  const firstDashboardDate = getFirstDashboardDate(existingDayMap);
-  const refreshAll = hasFlag("--refresh-all");
-  const trailingDates = new Set(dates.slice(-runtime.refreshDays));
-  const datesToRefresh = new Set(
-    selectDatesToRefresh({
-      dates,
-      cache,
-      refreshDays: runtime.refreshDays,
-      refreshAll,
-    }).filter(
-      (date) =>
-        refreshAll ||
-        trailingDates.has(date) ||
-        (!existingDayMap.has(date) && (!firstDashboardDate || date >= firstDashboardDate)),
-    ),
+  const cache = normalizeUsageCache(
+    await readJsonOrNull(cachePath),
+    cacheIdentity,
+    accountSnapshots.map((snapshot) => snapshot.account.id),
   );
-  const days = [];
-  let reusedDashboardDays = 0;
-  let rehydratedCacheDays = 0;
-
-  for (const date of dates) {
-    let logs = cache.days[date];
-
-    if (datesToRefresh.has(date)) {
-      const window = buildDayWindow(date, runtime.timeZone);
-      logs = await client.fetchAllUsageLogsForWindow({
-        scope: runtime.scope,
-        pageSize: runtime.pageSize,
-        startTimestamp: window.startTimestamp,
-        endTimestamp: window.endTimestamp,
-        type: 2,
+  const refreshAll = hasFlag("--refresh-all");
+  let checkpointQueue = Promise.resolve();
+  const accountDayResults = await Promise.all(
+    accountSnapshots.map(async (snapshot) => {
+      const accountIdentity = buildUsageCacheIdentity({
+        baseUrl: snapshot.account.baseUrl,
+        scope: snapshot.account.scope,
+        timeZone: runtime.timeZone,
       });
-      console.log(`Fetched ${logs.length} consume logs for ${date}`);
-    }
+      const accountCache = getAccountUsageCache(cache, snapshot.account.id, accountIdentity);
+      const datesToRefresh = new Set(
+        selectDatesToRefresh({
+          dates,
+          cache: accountCache,
+          refreshDays: runtime.refreshDays,
+          refreshAll,
+        }),
+      );
 
-    if (datesToRefresh.has(date)) {
-      const normalizedLogs = dedupeLogs(logs).filter((log) => toNumber(log.type) === 2);
-      cache.days[date] = normalizedLogs;
+      await mapWithConcurrency([...datesToRefresh], 4, async (date) => {
+        const window = buildDayWindow(date, runtime.timeZone);
+        const logs = await snapshot.client.fetchAllUsageLogsForWindow({
+          scope: snapshot.account.scope,
+          pageSize: runtime.pageSize,
+          startTimestamp: window.startTimestamp,
+          endTimestamp: window.endTimestamp,
+          type: 2,
+        });
+        const normalizedLogs = dedupeLogs(logs).filter((log) => toNumber(log.type) === 2);
+        accountCache.days[date] = normalizedLogs;
+        console.log(`[${snapshot.account.label}] Fetched ${normalizedLogs.length} consume logs for ${date}`);
 
-      // Checkpoint each refreshed day so a network interruption can resume from here.
-      await writeJson(cachePath, pruneUsageCache(cache, dates));
-      days.push(buildDailyUsageSnapshot({ date, logs: normalizedLogs, config: runtime, status }));
-      continue;
-    }
+        // Serialize checkpoints so concurrent account fetches cannot overwrite each other.
+        checkpointQueue = checkpointQueue.then(() => writeJson(cachePath, pruneUsageCache(cache, dates)));
+        await checkpointQueue;
+      });
 
-    if (Array.isArray(logs)) {
-      rehydratedCacheDays += 1;
-      days.push(buildDailyUsageSnapshot({ date, logs, config: runtime, status }));
-      continue;
-    }
+      const days = dates.map((date) =>
+        buildDailyUsageSnapshot({
+          date,
+          logs: accountCache.days[date] || [],
+          config: runtime,
+          status: snapshot.status,
+        }),
+      );
 
-    reusedDashboardDays += 1;
-    days.push(
-      existingDayMap.get(date) ??
-        buildDailyUsageSnapshot({ date, logs: [], config: runtime, status }),
-    );
-  }
+      return {
+        account: snapshot.account,
+        status: snapshot.status,
+        accountData: snapshot.accountData,
+        groups: snapshot.groups,
+        days,
+        refreshedDays: datesToRefresh.size,
+      };
+    }),
+  );
 
+  await checkpointQueue;
   await writeJson(cachePath, pruneUsageCache(cache, dates));
+
+  const days = dates.map((date, index) =>
+    mergeDailyUsageSnapshots({
+      date,
+      snapshots: accountDayResults.map((result) => result.days[index]),
+    }),
+  );
+  const refreshedDays = accountDayResults.reduce((sum, result) => sum + result.refreshedDays, 0);
   console.log(
-    `Usage cache: refreshed ${datesToRefresh.size} day(s), reused ${reusedDashboardDays} dashboard day(s), rehydrated ${rehydratedCacheDays} cached day(s).`,
+    `Usage cache: refreshed ${refreshedDays} account-day window(s) across ${accountDayResults.length} account(s).`,
   );
 
   const payload = buildDashboardPayloadFromDays({
@@ -192,6 +254,13 @@ async function main() {
     status,
     account,
     groups,
+    accounts: accountDayResults.map((result) => ({
+      id: result.account.id,
+      label: result.account.label,
+      status: result.status,
+      account: result.accountData,
+      groups: result.groups,
+    })),
   });
 
   await writeJson(outputPath, payload);

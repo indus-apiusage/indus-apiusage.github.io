@@ -180,11 +180,37 @@ function pickPeakDay(days) {
   return [...days].sort((left, right) => (right.primaryCost || 0) - (left.primaryCost || 0))[0] || null
 }
 
+function getAccountEntries(payload) {
+  if (Array.isArray(payload?.accounts) && payload.accounts.length > 0) {
+    return payload.accounts
+  }
+
+  return payload?.account
+    ? [
+        {
+          ...payload.account,
+          id: "account-1",
+          label: payload.account.displayName || "账号 1",
+        },
+      ]
+    : []
+}
+
 function buildBalanceSnapshot(payload, days) {
-  const account = payload?.account || {}
-  const remainingBalance = Number(account.remainingPrimaryBalance || 0)
-  const usedBalance = Number(account.usedPrimaryCost || 0)
-  const utilizationRate = Number(account.utilizationRate || 0)
+  const accounts = getAccountEntries(payload)
+  const fallbackAccount = payload?.account || {}
+  const remainingBalance = accounts.length
+    ? accounts.reduce((sum, account) => sum + Number(account.remainingPrimaryBalance || 0), 0)
+    : Number(fallbackAccount.remainingPrimaryBalance || 0)
+  const usedBalance = accounts.length
+    ? accounts.reduce((sum, account) => sum + Number(account.usedPrimaryCost || 0), 0)
+    : Number(fallbackAccount.usedPrimaryCost || 0)
+  const totalQuota = accounts.length
+    ? accounts.reduce((sum, account) => sum + Number(account.totalRawQuota || 0), 0)
+    : Number(fallbackAccount.totalRawQuota || 0)
+  const utilizationRate = totalQuota > 0
+    ? usedBalance / Math.max(remainingBalance + usedBalance, 0.000001)
+    : Number(fallbackAccount.utilizationRate || 0)
   const latestMonth = Array.isArray(days) ? days.at(-1) : null
   const latestMonthlyBurn = Number(latestMonth?.primaryCost || 0)
 
@@ -216,6 +242,7 @@ function buildBalanceSnapshot(payload, days) {
   }
 
   return {
+    accounts,
     remainingBalance,
     usedBalance,
     utilizationRate,
@@ -3089,6 +3116,30 @@ function renderHeroMonthFocus(payload, selectedDay, days) {
             <p>${hasGptPlusRatio ? "来自 ForOpenCode 的 gpt_plus 分组当前倍率。" : "下次同步后会显示 gpt_plus 分组倍率。"}</p>
           </div>
         </div>
+        <div class="account-balance-strip">
+          <div class="account-balance-strip__head">
+            <span>Account Balance Monitor</span>
+            <small>${numberFormatter(balance.accounts.length)} 个账号 · 独立余额</small>
+          </div>
+          <div class="account-balance-list">
+            ${balance.accounts.length
+              ? balance.accounts
+                  .map(
+                    (account, index) => `
+                      <article class="account-balance-card account-balance-card--${index % 2 === 0 ? "blue" : "pink"}">
+                        <div class="account-balance-card__topline">
+                          <span>${account.label || `账号 ${index + 1}`}</span>
+                          <i>${account.group || "ForOpenCode"}</i>
+                        </div>
+                        <strong>${currencyFormatter(currency.primarySymbol, account.remainingPrimaryBalance || 0)}</strong>
+                        <small>${account.displayName || account.username || "当前账号"} · 已用 ${currencyFormatter(currency.primarySymbol, account.usedPrimaryCost || 0)}</small>
+                      </article>
+                    `,
+                  )
+                  .join("")
+              : `<div class="account-balance-empty">等待账号余额同步</div>`}
+          </div>
+        </div>
         <div class="hero-month-side">
           <div class="hero-month-side-group">
             <div class="hero-month-stat">
@@ -3171,6 +3222,11 @@ function renderSignalDeck(payload, selectedDay, days) {
 function renderSummaryCards(payload, selectedDay, days) {
   const currency = normalizeCurrency(payload.currency)
   const topPerson = selectedDay?.people?.[0]
+  const accounts = getAccountEntries(payload)
+  const combinedBalance = accounts.reduce(
+    (sum, account) => sum + Number(account.remainingPrimaryBalance || 0),
+    0,
+  )
 
   const cards = [
     {
@@ -3196,6 +3252,11 @@ function renderSummaryCards(payload, selectedDay, days) {
       caption: topPerson
         ? `${currencyFormatter(currency.primarySymbol, topPerson.primaryCost)} / ${numberFormatter(topPerson.requests)} 次`
         : "等待同步",
+    },
+    {
+      label: "账号合计余额",
+      value: currencyFormatter(currency.primarySymbol, combinedBalance),
+      caption: `${numberFormatter(accounts.length)} 个账号独立同步余额`,
     },
   ]
 

@@ -107,6 +107,57 @@ export FOROPENCODE_USER_ID='1143'
 Unauthorized, New-Api-User header not provided
 ```
 
+如果浏览器请求中还包含 `Authorization: Bearer ...`，也需要配置它。推荐把完整请求头放在本地 `work/sync.env` 或 GitHub Actions Secret `FOROPENCODE_AUTHORIZATION` 中，不要写入仓库：
+
+```bash
+export FOROPENCODE_AUTHORIZATION='Bearer ...'
+export FOROPENCODE_USER_ID='1479'
+```
+
+也可以只配置 JWT 字符串，脚本会自动补上 `Bearer ` 前缀：
+
+```bash
+export FOROPENCODE_ACCESS_TOKEN='...'
+```
+
+Bearer 令牌通常有过期时间。过期后需要从浏览器重新获取最新令牌并更新本地配置和 GitHub Secret；Cookie、Bearer 和 `New-Api-User` 应来自同一次登录会话。
+
+如果需要同步多个账号，可以继续使用兼容旧配置的第二账号变量：
+
+```bash
+export FOROPENCODE_ACCOUNT_2_LABEL='备用账号'
+export FOROPENCODE_ACCOUNT_2_COOKIE='session=...'
+export FOROPENCODE_ACCOUNT_2_AUTHORIZATION='Bearer ...'
+export FOROPENCODE_ACCOUNT_2_USER_ID='1143'
+```
+
+也可以把多个账号整体放到 GitHub Secret `FOROPENCODE_ACCOUNTS_JSON` 中。这个 Secret 的结构如下，真实凭据不要写进仓库：
+
+```json
+[
+  {
+    "id": "account-1",
+    "label": "主账号",
+    "auth": {
+      "cookie": "session=...",
+      "authorization": "Bearer ...",
+      "userId": "1479"
+    }
+  },
+  {
+    "id": "account-2",
+    "label": "备用账号",
+    "auth": {
+      "cookie": "session=...",
+      "authorization": "Bearer ...",
+      "userId": "1143"
+    }
+  }
+]
+```
+
+`FOROPENCODE_ACCOUNTS_JSON` 优先级高于单账号变量。同步器会为每个账号维护独立的 `work/usage-log-cache.json` 分区，首次加入新账号时回填一次历史区间，之后只刷新最近日期并行完成。
+
 也支持用户名密码登录：
 
 ```bash
@@ -161,7 +212,13 @@ npm test
 - `FOROPENCODE_SCOPE`
   可选 `self` 或 `admin`
 - `FOROPENCODE_COOKIE`
+- `FOROPENCODE_AUTHORIZATION`
+- `FOROPENCODE_ACCESS_TOKEN`
+- `FOROPENCODE_ACCOUNTS_JSON`
 - `FOROPENCODE_USER_ID`
+- `FOROPENCODE_ACCOUNT_2_COOKIE`
+- `FOROPENCODE_ACCOUNT_2_AUTHORIZATION`
+- `FOROPENCODE_ACCOUNT_2_USER_ID`
 - `FOROPENCODE_USERNAME`
 - `FOROPENCODE_PASSWORD`
 - `FOROPENCODE_TURNSTILE_TOKEN`
@@ -192,6 +249,8 @@ npm test
 在仓库 `Settings -> Secrets and variables -> Actions` 里至少配置下面之一：
 
 - `FOROPENCODE_COOKIE`
+- `FOROPENCODE_AUTHORIZATION`
+- `FOROPENCODE_ACCOUNTS_JSON`
 - `FOROPENCODE_USER_ID`
 
 或者：

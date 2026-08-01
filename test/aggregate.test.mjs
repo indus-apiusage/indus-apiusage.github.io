@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDashboardPayload, buildDashboardPayloadFromDays } from "../src/lib/aggregate.mjs";
+import {
+  buildDashboardPayload,
+  buildDashboardPayloadFromDays,
+  mergeDailyUsageSnapshots,
+} from "../src/lib/aggregate.mjs";
 
 test("buildDashboardPayload groups usage by configured token owner", () => {
   const payload = buildDashboardPayload({
@@ -177,4 +181,67 @@ test("buildDashboardPayloadFromDays rebuilds totals from cached daily snapshots"
   assert.equal(rebuilt.summary.totalRequests, 1);
   assert.equal(rebuilt.summary.totalPrimaryCost, 1);
   assert.deepEqual(rebuilt.days, original.days);
+});
+
+test("mergeDailyUsageSnapshots combines requests and members from multiple accounts", () => {
+  const config = {
+    baseUrl: "https://www.foropencode.com",
+    scope: "self",
+    timeZone: "Asia/Shanghai",
+    people: [],
+  };
+  const status = { quota_per_unit: 500000 };
+  const first = buildDashboardPayload({
+    config,
+    status,
+    dayResults: [
+      {
+        date: "2026-07-01",
+        logs: [
+          {
+            id: 1,
+            type: 2,
+            token_name: "account-one-key",
+            model_name: "gpt-5",
+            quota: 500000,
+            prompt_tokens: 10,
+            completion_tokens: 2,
+            other: "{}",
+          },
+        ],
+      },
+    ],
+  });
+  const second = buildDashboardPayload({
+    config,
+    status,
+    dayResults: [
+      {
+        date: "2026-07-01",
+        logs: [
+          {
+            id: 2,
+            type: 2,
+            token_name: "account-two-key",
+            model_name: "gpt-5-mini",
+            quota: 1000000,
+            prompt_tokens: 20,
+            completion_tokens: 4,
+            other: "{}",
+          },
+        ],
+      },
+    ],
+  });
+
+  const merged = mergeDailyUsageSnapshots({
+    date: "2026-07-01",
+    snapshots: [first.days[0], second.days[0]],
+  });
+
+  assert.equal(merged.requests, 2);
+  assert.equal(merged.primaryCost, 3);
+  assert.equal(merged.promptTokens, 30);
+  assert.equal(merged.people.length, 2);
+  assert.equal(merged.models.length, 2);
 });
