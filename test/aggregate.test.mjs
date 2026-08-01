@@ -183,6 +183,110 @@ test("buildDashboardPayloadFromDays rebuilds totals from cached daily snapshots"
   assert.deepEqual(rebuilt.days, original.days);
 });
 
+test("excludes token 111 from new and stale daily totals", () => {
+  const config = {
+    baseUrl: "https://www.foropencode.com",
+    scope: "self",
+    timeZone: "Asia/Shanghai",
+    lookbackDays: 1,
+    people: [],
+  };
+  const status = { quota_per_unit: 500000 };
+
+  const fresh = buildDashboardPayload({
+    config,
+    status,
+    dayResults: [
+      {
+        date: "2026-07-01",
+        logs: [
+          {
+            id: 1,
+            type: 2,
+            token_name: "visible-key",
+            model_name: "gpt-5",
+            quota: 500000,
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            other: "{}",
+          },
+          {
+            id: 2,
+            type: 2,
+            token_name: "111",
+            model_name: "gpt-5-mini",
+            quota: 1000000,
+            prompt_tokens: 200,
+            completion_tokens: 40,
+            other: "{}",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(fresh.summary.totalRequests, 1);
+  assert.equal(fresh.summary.totalPrimaryCost, 1);
+  assert.equal(fresh.people.some((person) => person.displayName === "111"), false);
+
+  const stale = buildDashboardPayloadFromDays({
+    config,
+    status,
+    days: [
+      {
+        date: "2026-07-01",
+        requests: 2,
+        rawQuota: 1500000,
+        primaryCost: 3,
+        secondaryCost: 0,
+        promptTokens: 300,
+        completionTokens: 60,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        models: [
+          { name: "gpt-5", requests: 1, rawQuota: 500000, primaryCost: 1 },
+          { name: "gpt-5-mini", requests: 1, rawQuota: 1000000, primaryCost: 2 },
+        ],
+        people: [
+          {
+            personId: "visible-key",
+            displayName: "visible-key",
+            tokenNames: ["visible-key"],
+            requests: 1,
+            rawQuota: 500000,
+            primaryCost: 1,
+            secondaryCost: 0,
+            promptTokens: 100,
+            completionTokens: 20,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            models: [{ name: "gpt-5", requests: 1, rawQuota: 500000, primaryCost: 1 }],
+          },
+          {
+            personId: "111",
+            displayName: "111",
+            tokenNames: ["111"],
+            requests: 1,
+            rawQuota: 1000000,
+            primaryCost: 2,
+            secondaryCost: 0,
+            promptTokens: 200,
+            completionTokens: 40,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            models: [{ name: "gpt-5-mini", requests: 1, rawQuota: 1000000, primaryCost: 2 }],
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(stale.summary.totalRequests, 1);
+  assert.equal(stale.summary.totalPrimaryCost, 1);
+  assert.deepEqual(stale.days[0].models.map((model) => model.name), ["gpt-5"]);
+  assert.equal(stale.people.some((person) => person.displayName === "111"), false);
+});
+
 test("mergeDailyUsageSnapshots combines requests and members from multiple accounts", () => {
   const config = {
     baseUrl: "https://www.foropencode.com",

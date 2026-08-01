@@ -11,6 +11,12 @@ import {
   unique,
 } from "./utils.mjs";
 
+const EXCLUDED_TOKEN_NAMES = new Set(["111"]);
+
+function isExcludedTokenName(value) {
+  return EXCLUDED_TOKEN_NAMES.has(String(value || "").trim());
+}
+
 function buildCurrencyStatus(status) {
   const quotaPerUnit = toNumber(status.quota_per_unit, 500000);
   const quotaDisplayType = "CNY";
@@ -175,6 +181,41 @@ function finalizeModelMap(modelMap) {
   );
 }
 
+function sanitizeDailyUsageSnapshot(day) {
+  const sourcePeople = Array.isArray(day?.people) ? day.people : [];
+  const people = sourcePeople.filter(
+    (entry) =>
+      !isExcludedTokenName(entry?.displayName) &&
+      !(entry?.tokenNames || []).some((tokenName) => isExcludedTokenName(tokenName)),
+  );
+
+  if (people.length === sourcePeople.length) {
+    return day;
+  }
+
+  const totals = createMetricAccumulator();
+  const modelMap = new Map();
+
+  for (const person of people) {
+    mergeMetrics(totals, person);
+    mergeSerializedModels(modelMap, person.models);
+  }
+
+  return {
+    ...day,
+    requests: totals.requests,
+    rawQuota: totals.rawQuota,
+    primaryCost: Number(totals.primaryCost.toFixed(6)),
+    secondaryCost: Number(totals.secondaryCost.toFixed(6)),
+    promptTokens: totals.promptTokens,
+    completionTokens: totals.completionTokens,
+    cacheReadTokens: totals.cacheReadTokens,
+    cacheWriteTokens: totals.cacheWriteTokens,
+    people,
+    models: finalizeModelMap(modelMap),
+  };
+}
+
 function trimLeadingEmptyDays(days) {
   const firstActiveIndex = days.findIndex((day) => toNumber(day.requests) > 0);
   return firstActiveIndex === -1 ? days : days.slice(firstActiveIndex);
@@ -286,7 +327,9 @@ export function buildDailyUsageSnapshot({ date, logs, config, status }) {
   const modelMap = new Map();
   const dayTotals = createMetricAccumulator();
 
-  for (const log of (Array.isArray(logs) ? logs : []).filter((entry) => toNumber(entry.type) === 2)) {
+  for (const log of (Array.isArray(logs) ? logs : []).filter(
+    (entry) => toNumber(entry.type) === 2 && !isExcludedTokenName(entry.token_name),
+  )) {
     const identity = mapPerson(log.token_name);
     const modelName = String(log.model_name || "Unknown Model");
     const metrics = deriveLogMetrics(log, currency);
@@ -381,10 +424,12 @@ export function mergeDailyUsageSnapshots({ date, snapshots = [] }) {
       continue;
     }
 
-    mergeMetrics(dayTotals, snapshot);
-    mergeSerializedModels(modelMap, snapshot.models);
+    const sanitizedSnapshot = sanitizeDailyUsageSnapshot(snapshot);
 
-    for (const entry of snapshot.people || []) {
+    mergeMetrics(dayTotals, sanitizedSnapshot);
+    mergeSerializedModels(modelMap, sanitizedSnapshot.models);
+
+    for (const entry of sanitizedSnapshot.people || []) {
       const personId = String(entry.personId || slugify(entry.displayName || "Unassigned"));
       if (!peopleMap.has(personId)) {
         peopleMap.set(personId, {
@@ -448,10 +493,19 @@ export function buildDashboardPayloadFromDays({
   const currency = buildCurrencyStatus(status ?? {});
   const peopleMap = new Map();
   const warnings = [];
-  const days = trimLeadingEmptyDays(sortByDateAsc(Array.isArray(sourceDays) ? sourceDays : []));
+  const days = trimLeadingEmptyDays(
+    sortByDateAsc(Array.isArray(sourceDays) ? sourceDays : []).map(sanitizeDailyUsageSnapshot),
+  );
 
   for (const day of days) {
     for (const entry of day.people || []) {
+      if (
+        isExcludedTokenName(entry.displayName) ||
+        (entry.tokenNames || []).some((tokenName) => isExcludedTokenName(tokenName))
+      ) {
+        continue;
+      }
+
       if (!peopleMap.has(entry.personId)) {
         peopleMap.set(entry.personId, {
           personId: entry.personId,
