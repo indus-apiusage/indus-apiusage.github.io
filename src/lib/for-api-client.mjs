@@ -226,6 +226,7 @@ export class ForApiClient {
     }
 
     let lastError;
+    const attemptErrors = [];
 
     try {
       for (const variant of variants) {
@@ -272,6 +273,7 @@ export class ForApiClient {
             `Network request to ${new URL(url).pathname} failed${hint}: ${detail}`,
             { cause: error },
           );
+          attemptErrors.push(`${variant.label}: ${detail}`);
 
           if (!this.isTransientFetchError(error)) {
             break;
@@ -279,7 +281,18 @@ export class ForApiClient {
         }
       }
 
-      throw lastError ?? new Error(`Network request to ${new URL(url).pathname} failed.`);
+      if (!lastError) {
+        throw new Error(`Network request to ${new URL(url).pathname} failed.`);
+      }
+
+      if (attemptErrors.length > 1) {
+        throw new Error(
+          `Network request to ${new URL(url).pathname} failed after ${attemptErrors.length} attempts: ${attemptErrors.join(" | ")}`,
+          { cause: lastError },
+        );
+      }
+
+      throw lastError;
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
