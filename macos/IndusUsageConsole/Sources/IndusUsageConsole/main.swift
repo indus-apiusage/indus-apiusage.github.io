@@ -250,6 +250,7 @@ final class ConsoleModel: ObservableObject {
     private var onceProcess: Process?
     private var ownsLoop = false
     private var autoStartScheduled = false
+    private var stopRequested = false
     private var pollTimer: Timer?
     private var lastLogModificationDate: Date?
     private var lastSnapshotModificationDate: Date?
@@ -361,15 +362,32 @@ final class ConsoleModel: ObservableObject {
         do {
             let envURL = try writeRuntimeEnvironment()
             let process = Process()
+            let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = [projectURL.appendingPathComponent("scripts/run-local-sync-loop.sh").path]
             process.currentDirectoryURL = projectURL
             process.environment = processEnvironment(using: envURL)
-            process.terminationHandler = { [weak self] _ in
+            process.standardOutput = pipe
+            process.standardError = pipe
+            pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                let data = handle.availableData
+                guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+                Task { @MainActor in self?.appendLog(text) }
+            }
+            stopRequested = false
+            process.terminationHandler = { [weak self] process in
+                pipe.fileHandleForReading.readabilityHandler = nil
                 Task { @MainActor in
                     guard let self else { return }
                     self.loopProcess = nil
                     self.ownsLoop = false
+                    self.removeRuntimeEnvironment()
+                    if !self.stopRequested && process.terminationStatus != 0 {
+                        self.phase = .failed
+                        self.eventMessage = "自动同步进程已退出（状态 (process.terminationStatus)），请查看日志"
+                    } else if self.stopRequested {
+                        self.phase = .idle
+                    }
                     self.refreshRuntime()
                 }
             }
@@ -387,6 +405,7 @@ final class ConsoleModel: ObservableObject {
 
     func stopSync() {
         if ownsLoop, let process = loopProcess, process.isRunning {
+            stopRequested = true
             process.terminate()
             loopProcess = nil
             ownsLoop = false
