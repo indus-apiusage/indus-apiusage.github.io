@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import WebKit
 
 private enum ConsolePalette {
     static let ink = Color(hex: 0x1B2437)
@@ -63,6 +64,337 @@ struct ConsoleRootView: View {
             AccountEditorView(draft: draft) { updated in
                 model.save(updated)
             }
+        }
+        .sheet(item: $model.topUpProfile) { profile in
+            RechargeSheet(model: model, profile: profile)
+        }
+    }
+}
+
+struct RechargeSheet: View {
+    @ObservedObject var model: ConsoleModel
+    let profile: AccountProfile
+    @Environment(\.dismiss) private var dismiss
+
+    private var accountTitle: String {
+        profile.label.isEmpty ? profile.name : profile.label
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(hex: 0xF28CB6).opacity(0.14))
+                    Image(systemName: "creditcard.and.123")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color(hex: 0xD56F9C))
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("官方充值 · \(accountTitle)")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(ConsolePalette.ink)
+                    Text("活动、固定金额、自定义金额和订单历史实时同步自钱包页面")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(ConsolePalette.muted)
+                }
+
+                Spacer()
+
+                Button {
+                    model.openTopUpInBrowser(for: profile)
+                } label: {
+                    Label("浏览器打开", systemImage: "safari")
+                }
+                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
+                Button("关闭") {
+                    dismiss()
+                }
+                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+
+            Divider()
+                .overlay(ConsolePalette.line)
+
+            if let url = model.topUpURL(for: profile) {
+                RechargeWebView(
+                    url: url,
+                    credentials: model.topUpCredentials(for: profile),
+                    onCookiesCaptured: { cookies in
+                        model.persistWalletCookies(cookies, for: profile.id, baseURL: profile.baseURL)
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(Color(hex: 0xD56F9C))
+                    Text("账号地址无效")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(ConsolePalette.ink)
+                    Text("请先在账号矩阵中检查 Base URL。")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(ConsolePalette.muted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(minWidth: 980, minHeight: 720)
+        .background(ConsolePalette.canvas)
+    }
+}
+
+struct RechargeWebView: NSViewRepresentable {
+    let url: URL
+    let credentials: WalletSessionCredentials
+    let onCookiesCaptured: ([HTTPCookie]) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCookiesCaptured: onCookiesCaptured)
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        // Keep the injected session in memory only; Keychain remains the sole persistent credential store.
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: Self.authenticationScript(for: credentials),
+                injectionTime: .atDocumentStart,
+                // Never expose account credentials to third-party iframes.
+                forMainFrameOnly: true
+            )
+        )
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.allowsBackForwardNavigationGestures = true
+        webView.navigationDelegate = context.coordinator
+        context.coordinator.attach(to: webView)
+        load(url, credentials: credentials, in: webView)
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {}
+
+    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        coordinator.stop()
+        webView.navigationDelegate = nil
+    }
+
+    private func load(_ url: URL, credentials: WalletSessionCredentials, in webView: WKWebView) {
+        let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
+        let cookiePairs = Self.cookiePairs(from: credentials.cookie)
+        let cookies = Self.cookies(from: cookiePairs, hosts: Self.authenticationHosts(for: url))
+        let group = DispatchGroup()
+
+        for cookie in cookies {
+            group.enter()
+            cookieStore.setCookie(cookie) { group.leave() }
+        }
+
+        var request = URLRequest(url: url)
+        // A fresh session cookie must win over an old Bearer token. Some server
+        // versions prefer Authorization when both are present.
+        let authorization = Self.authorizationHeader(for: credentials, cookiePairs: cookiePairs)
+        if !authorization.isEmpty {
+            request.setValue(authorization, forHTTPHeaderField: "Authorization")
+        }
+        if !credentials.userID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            request.setValue(credentials.userID, forHTTPHeaderField: "New-Api-User")
+        }
+        if !cookiePairs.isEmpty {
+            request.setValue(
+                cookiePairs.map { "\($0.name)=\($0.value)" }.joined(separator: "; "),
+                forHTTPHeaderField: "Cookie"
+            )
+        }
+
+        group.notify(queue: .main) {
+            webView.load(request)
+        }
+    }
+
+    private struct CookiePair {
+        let name: String
+        let value: String
+    }
+
+    private static func cookiePairs(from raw: String) -> [CookiePair] {
+        raw.split(separator: ";").compactMap { part in
+            let pieces = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pieces.count == 2 else { return nil }
+            let name = pieces[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = pieces[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            return CookiePair(name: name, value: value)
+        }
+    }
+
+    private static func authenticationHosts(for url: URL) -> [String] {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return [] }
+        var hosts = [host]
+        if host.hasPrefix("www.") {
+            hosts.append(String(host.dropFirst(4)))
+        } else {
+            hosts.append("www.\(host)")
+        }
+        var uniqueHosts: [String] = []
+        for candidate in hosts where !uniqueHosts.contains(candidate) {
+            uniqueHosts.append(candidate)
+        }
+        return uniqueHosts
+    }
+
+    private static func cookies(from pairs: [CookiePair], hosts: [String]) -> [HTTPCookie] {
+        hosts.flatMap { host in
+            pairs.compactMap { pair in
+                HTTPCookie(properties: [
+                    .domain: host,
+                    .path: "/",
+                    .name: pair.name,
+                    .value: pair.value,
+                    .secure: "TRUE"
+                ])
+            }
+        }
+    }
+
+    private static func authenticationScript(for credentials: WalletSessionCredentials) -> String {
+        let cookiePairs = cookiePairs(from: credentials.cookie)
+        let authorization = authorizationHeader(for: credentials, cookiePairs: cookiePairs)
+        let userID = credentials.userID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let authorizationLiteral = javascriptLiteral(authorization)
+        let userIDLiteral = javascriptLiteral(userID)
+
+        // The initial document request can carry headers, but browser-created API
+        // requests do not inherit URLRequest headers. Patch same-origin fetch/XHR
+        // so the wallet stays authenticated after the SPA bootstraps.
+        return """
+        (() => {
+          const auth = {
+            authorization: \(authorizationLiteral),
+            userID: \(userIDLiteral)
+          };
+          const sameOrigin = (input) => {
+            try {
+              const rawURL = typeof input === "string" ? input : input.url;
+              return new URL(rawURL, window.location.href).origin === window.location.origin;
+            } catch (_) {
+              return false;
+            }
+          };
+          const applyHeaders = (headers) => {
+            if (auth.authorization) headers.set("Authorization", auth.authorization);
+            if (auth.userID) headers.set("New-Api-User", auth.userID);
+            return headers;
+          };
+
+          if (typeof window.fetch === "function" && !window.__indusWalletFetchPatched) {
+            window.__indusWalletFetchPatched = true;
+            const originalFetch = window.fetch;
+            window.fetch = function(input, init) {
+              const isRequest = typeof Request !== "undefined" && input instanceof Request;
+              const rawURL = isRequest ? input.url : input;
+              if (!sameOrigin(rawURL)) return originalFetch.apply(this, arguments);
+
+              const nextInit = init ? Object.assign({}, init) : {};
+              const headers = new Headers(isRequest ? input.headers : undefined);
+              if (nextInit.headers) {
+                new Headers(nextInit.headers).forEach((value, key) => headers.set(key, value));
+              }
+              nextInit.headers = applyHeaders(headers);
+              if (!nextInit.credentials) nextInit.credentials = "include";
+              return originalFetch.call(this, input, nextInit);
+            };
+          }
+
+          if (typeof XMLHttpRequest !== "undefined" && !window.__indusWalletXHRPatched) {
+            window.__indusWalletXHRPatched = true;
+            const originalOpen = XMLHttpRequest.prototype.open;
+            const originalSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function(method, rawURL) {
+              this.__indusWalletURL = rawURL;
+              return originalOpen.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.send = function() {
+              if (sameOrigin(this.__indusWalletURL)) {
+                if (auth.authorization) this.setRequestHeader("Authorization", auth.authorization);
+                if (auth.userID) this.setRequestHeader("New-Api-User", auth.userID);
+              }
+              return originalSend.apply(this, arguments);
+            };
+          }
+        })();
+        """
+    }
+
+    private static func normalizedAuthorization(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return trimmed.lowercased().hasPrefix("bearer ") ? trimmed : "Bearer \(trimmed)"
+    }
+
+    private static func authorizationHeader(
+        for credentials: WalletSessionCredentials,
+        cookiePairs: [CookiePair]
+    ) -> String {
+        let hasSessionCookie = cookiePairs.contains {
+            $0.name.caseInsensitiveCompare("session") == .orderedSame && !$0.value.isEmpty
+        }
+        return hasSessionCookie ? "" : normalizedAuthorization(credentials.authorization)
+    }
+
+    private static func javascriptLiteral(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let literal = String(data: data, encoding: .utf8) else {
+            return "\"\""
+        }
+        return literal
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        private let onCookiesCaptured: ([HTTPCookie]) -> Void
+        private weak var webView: WKWebView?
+        private var cookieTimer: Timer?
+
+        init(onCookiesCaptured: @escaping ([HTTPCookie]) -> Void) {
+            self.onCookiesCaptured = onCookiesCaptured
+        }
+
+        func attach(to webView: WKWebView) {
+            self.webView = webView
+            captureCookies()
+            cookieTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                self?.captureCookies()
+            }
+        }
+
+        func stop() {
+            cookieTimer?.invalidate()
+            cookieTimer = nil
+            webView = nil
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+            captureCookies()
+        }
+
+        private func captureCookies() {
+            guard let webView else { return }
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    self.onCookiesCaptured(cookies)
+                }
+            }
+        }
+
+        deinit {
+            cookieTimer?.invalidate()
         }
     }
 }
@@ -306,15 +638,131 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 18) {
             HeroPanel(model: model)
             MetricsStrip(model: model)
+            UsagePulsePanel(model: model)
+            MemberUsagePanel(model: model)
             HStack(alignment: .bottom, spacing: 18) {
                 AccountMatrixPanel(model: model)
                     .frame(minWidth: 430, maxWidth: .infinity, alignment: .leading)
                 SyncControlPanel(model: model)
                     .frame(width: 330, alignment: .leading)
             }
-            MemberUsagePanel(model: model)
             EventLogPanel(model: model)
         }
+    }
+}
+
+struct UsagePulsePanel: View {
+    @ObservedObject var model: ConsoleModel
+
+    var body: some View {
+        GlassCard {
+            PanelHeader(
+                eyebrow: "USAGE PULSE",
+                title: "今日与本月",
+                detail: "按最新数据日计算，本月按自然月累计"
+            ) {
+                if let day = model.snapshot?.latestDay {
+                    Text("最新 \(day.shortDateText)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(ConsolePalette.cyan)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(ConsolePalette.cyan.opacity(0.1), in: Capsule())
+                }
+            }
+
+            if let snapshot = model.snapshot, let latestDay = snapshot.latestDay {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 10), count: 4),
+                    spacing: 10
+                ) {
+                    UsagePulseMetric(
+                        icon: "sun.max.fill",
+                        label: "当日用量",
+                        value: latestDay.usageText,
+                        caption: latestDay.shortDateText,
+                        tint: ConsolePalette.pink
+                    )
+                    UsagePulseMetric(
+                        icon: "bolt.fill",
+                        label: "当日请求",
+                        value: latestDay.requestText,
+                        caption: "次请求",
+                        tint: ConsolePalette.cyan
+                    )
+                    UsagePulseMetric(
+                        icon: "calendar.badge.clock",
+                        label: "本月累计",
+                        value: String(format: "¥%.4f", snapshot.latestMonthUsage),
+                        caption: "\(snapshot.latestMonthLabel)自然月",
+                        tint: ConsolePalette.blue
+                    )
+                    UsagePulseMetric(
+                        icon: "chart.bar.fill",
+                        label: "本月请求",
+                        value: String(format: "%d", snapshot.latestMonthRequests),
+                        caption: "已统计 \(snapshot.latestMonthDays.count) 天",
+                        tint: ConsolePalette.mint
+                    )
+                }
+                .padding(.top, 16)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(ConsolePalette.cyan)
+                    Text("当日数据来自最新同步日期；本月累计仅汇总 \(snapshot.latestMonthLabel) 的已有数据。")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(ConsolePalette.muted)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                }
+                .padding(.top, 12)
+            } else {
+                Text("等待同步后显示当日和本月用量")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(ConsolePalette.muted)
+                    .padding(.top, 14)
+            }
+        }
+    }
+}
+
+struct UsagePulseMetric: View {
+    let icon: String
+    let label: String
+    let value: String
+    let caption: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(ConsolePalette.muted)
+                Text(value)
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .foregroundStyle(ConsolePalette.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(caption)
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundStyle(ConsolePalette.soft)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .background(Color.white.opacity(0.68), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
     }
 }
 
@@ -333,7 +781,7 @@ struct MemberUsagePanel: View {
 
     var body: some View {
         GlassCard {
-            PanelHeader(eyebrow: "WEB USAGE", title: "网站成员用量", detail: "当前同步窗口内的成员汇总") {
+            PanelHeader(eyebrow: "WEB USAGE", title: "网站成员用量", detail: "每个人的当日与自然月累计") {
                 Text("gpt_plus \(multiplierText)")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(ConsolePalette.cyan)
@@ -347,7 +795,7 @@ struct MemberUsagePanel: View {
                     spacing: 10
                 ) {
                     ForEach(people) { person in
-                        MemberUsageTile(person: person)
+                        MemberUsageTile(person: person, snapshot: model.snapshot)
                     }
                 }
                 .padding(.top, 16)
@@ -363,6 +811,30 @@ struct MemberUsagePanel: View {
 
 struct MemberUsageTile: View {
     let person: SnapshotPerson
+    let snapshot: DashboardSnapshot?
+
+    private var latestDate: String? {
+        snapshot?.latestDay?.date
+    }
+
+    private var todayUsage: SnapshotDay? {
+        guard let latestDate else { return nil }
+        return person.days.first(where: { $0.date == latestDate })
+    }
+
+    private var monthUsage: [SnapshotDay] {
+        guard let latestDate else { return [] }
+        let monthPrefix = String(latestDate.prefix(7))
+        return person.days.filter { $0.date.hasPrefix(monthPrefix) }
+    }
+
+    private var monthCostText: String {
+        String(format: "¥%.4f", monthUsage.reduce(0) { $0 + $1.primaryCost })
+    }
+
+    private var monthRequestText: String {
+        String(format: "%d 次", monthUsage.reduce(0) { $0 + $1.requests })
+    }
 
     var body: some View {
         HStack(spacing: 11) {
@@ -380,24 +852,54 @@ struct MemberUsageTile: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(ConsolePalette.ink)
                     .lineLimit(1)
-                Text(person.requestText)
+                Text("窗口累计 · \(person.requestText)")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(ConsolePalette.muted)
             }
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(person.usageText)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(ConsolePalette.ink)
-                    .minimumScaleFactor(0.75)
-                Text("网站用量")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundStyle(ConsolePalette.soft)
+            HStack(spacing: 18) {
+                PersonUsageStat(
+                    label: "今日",
+                    value: todayUsage?.usageText ?? "¥0.0000",
+                    detail: todayUsage.map { "\($0.requests) 次" } ?? "0 次",
+                    tint: ConsolePalette.pink
+                )
+                PersonUsageStat(
+                    label: "本月",
+                    value: monthCostText,
+                    detail: monthRequestText,
+                    tint: ConsolePalette.cyan
+                )
             }
         }
         .padding(12)
         .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
+    }
+}
+
+struct PersonUsageStat: View {
+    let label: String
+    let value: String
+    let detail: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            Text(label)
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(ConsolePalette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(detail)
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundStyle(ConsolePalette.soft)
+                .lineLimit(1)
+        }
+        .frame(minWidth: 74, alignment: .trailing)
     }
 }
 
@@ -939,15 +1441,29 @@ struct APIKeyVaultRow: View {
             .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(record.displayName)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(ConsolePalette.ink)
-                    .lineLimit(1)
-                Text("\(record.accountLabel) · \(record.statusText)")
+                HStack(spacing: 8) {
+                    Text(record.displayName)
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(ConsolePalette.ink)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text(record.accountSourceText)
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(accountTint)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(accountTint.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(accountTint.opacity(0.24), lineWidth: 1))
+                        .help("此 API Key 来自 \(record.accountSourceText)")
+                }
+                Text(record.statusText)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(ConsolePalette.muted)
                     .lineLimit(1)
             }
+            .frame(minWidth: 180, alignment: .leading)
             Spacer(minLength: 10)
             Button {
                 model.copyAPIKey(record)
@@ -989,6 +1505,10 @@ struct APIKeyVaultRow: View {
         .padding(12)
         .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
+    }
+
+    private var accountTint: Color {
+        record.accountColorIndex % 2 == 0 ? ConsolePalette.cyan : Color(hex: 0xF28CB6)
     }
 }
 

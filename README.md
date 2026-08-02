@@ -224,7 +224,43 @@ bash scripts/build-macos-app.sh --open
 
 生成的 App 位于 `dist/Indus Usage Console.app`。首次使用时，在“控制设置”确认项目目录，再进入“账号矩阵”添加账号。App 只把非敏感账号元数据写入 Application Support，敏感凭据写入 Keychain；同步时通过 `SYNC_ENV_FILE` 生成权限为 `600` 的本地运行环境，并复用现有 Bash/Node 同步链路。
 
+如果希望让 Xcode 自动管理 WidgetKit 的签名，可以打开 `macos/IndusUsageConsole/IndusUsageConsole.xcodeproj`，分别选择 `IndusUsageConsole` 和 `IndusUsageWidget` Target，在 `Signing & Capabilities` 中勾选 `Automatically manage signing` 并选择 Team。之后可以运行：
+
+```bash
+bash scripts/build-macos-xcode.sh
+APP_SOURCE="$PWD/dist/xcode-derived/Build/Products/Debug/Indus Usage Console.app" \
+  bash scripts/install-macos-app.sh
+bash scripts/check-macos-widget.sh
+```
+
+这个路径不需要手动填写 provisioning profile；需要 Xcode 账号拥有可用 Team 和 Apple Development 身份。当前免费兼容模式不依赖 App Group：Widget 从 GitHub Pages 的公开聚合文件读取数据。
+
 App 需要 macOS 13 或更高版本。当前项目没有把生成的 `.app`、Swift 构建缓存或运行时凭据提交到 Git。
+
+### macOS 系统级桌面小组件
+
+这不是 App 内打开的浮动窗口，而是真正的 WidgetKit 扩展。构建脚本会把扩展嵌入 `Contents/PlugIns/IndusUsageWidget.appex`，小组件提供小号、中号和大号三种尺寸，展示本月累计、今日用量、余额、`gpt_plus` 倍率和账号轨道。同步脚本会生成 `docs/data/widget.json` 并随网页数据一起推送，Widget 从 GitHub Pages 读取这个只含汇总数字的文件；文件不包含 Cookie、Token、密码或 API Key。主 App 仍会把本机快照写到 Application Support，供本地调试和网络失败时使用。
+
+在本机安装并注册：
+
+```bash
+bash scripts/build-macos-app.sh
+bash scripts/install-macos-app.sh
+bash scripts/check-macos-widget.sh
+```
+
+然后在 macOS 桌面右键选择“编辑小组件”，搜索“Indus API 用量”并添加到桌面。小组件点击后会回到 App 的总览页面。
+
+注意：系统小组件不是普通网页或 App 浮窗，macOS 通常要求主 App 和 `.appex` 使用 Apple Development 或 Developer ID 签名。未提供签名身份时，构建脚本仍会生成 ad-hoc 本地测试包，但 `PlugInKit` 可能不会将它加入系统小组件列表。正式签名构建示例：
+
+```bash
+CODESIGN_IDENTITY="Apple Development: 你的 Apple ID (TEAMID)" \
+APP_PROVISIONING_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/你的主 App.mobileprovision" \
+WIDGET_PROVISIONING_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/你的 Widget.mobileprovision" \
+  bash scripts/build-macos-app.sh
+```
+
+如果 `bash scripts/check-macos-widget.sh` 显示 `No registered extension`，先在 Xcode 登录 Apple ID，在主 App 和 Widget Target 中选择同一个 Team，打开 Automatically manage signing，再重新构建和安装。Personal Team 不需要配置 App Groups；本机验证表明当前无 App Group 版本可以由 Personal Team 签署并注册。
 
 ## 可用环境变量
 

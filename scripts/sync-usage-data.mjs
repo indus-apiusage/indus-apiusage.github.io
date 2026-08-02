@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -39,6 +40,68 @@ async function readJsonOrNull(filePath) {
 
     console.warn(`Ignoring unreadable usage cache at ${filePath}: ${error.message}`);
     return null;
+  }
+}
+
+function buildWidgetPayload(payload) {
+  const latestDay = [...(payload.days || [])].sort((left, right) =>
+    String(right?.date || "").localeCompare(String(left?.date || "")),
+  )[0];
+  const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+  const monthPrefix = latestDay?.date ? String(latestDay.date).slice(0, 7) : "";
+  const monthDays = monthPrefix
+    ? (payload.days || []).filter((day) => String(day?.date || "").startsWith(monthPrefix))
+    : [];
+
+  return {
+    schemaVersion: 1,
+    generatedAt: payload.generatedAt || null,
+    latestDate: latestDay?.date || payload.summary?.latestDate || null,
+    todayUsage: Number(latestDay?.primaryCost || 0),
+    todayRequests: Number(latestDay?.requests || 0),
+    monthUsage: monthDays.reduce((sum, day) => sum + Number(day?.primaryCost || 0), 0),
+    monthRequests: monthDays.reduce((sum, day) => sum + Number(day?.requests || 0), 0),
+    totalBalance: accounts.reduce((sum, account) => sum + Number(account?.remainingPrimaryBalance || 0), 0),
+    gptPlusRatio: Number(payload.status?.gptPlus?.ratio || accounts[0]?.gptPlus?.ratio || 0) || null,
+    accountCount: accounts.length,
+    syncState: "已同步",
+    accounts: accounts.map((account) => ({
+      label: account?.label || account?.displayName || account?.username || "账号",
+      balance: Number(account?.remainingPrimaryBalance || 0),
+      usage: Number(account?.usedPrimaryCost || 0),
+      requests: Number(account?.requestCount || 0),
+      utilization: Number(account?.utilizationRate || 0),
+      gptPlusRatio: Number(account?.gptPlus?.ratio || 0) || null,
+    })),
+  };
+}
+
+async function writeMacWidgetSnapshot(payload, publicOutputPath) {
+  const widgetPayload = buildWidgetPayload(payload);
+  const data = `${JSON.stringify(widgetPayload, null, 2)}\n`;
+
+  // Keep the public file aggregate-only so the native widget needs no App Group.
+  await writeJson(publicOutputPath, widgetPayload);
+
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  const paths = [
+    path.join(os.homedir(), "Library", "Application Support", "IndusUsageConsole", "widget.json"),
+  ];
+  let wroteSnapshot = false;
+  for (const filePath of paths) {
+    try {
+      await ensureDir(path.dirname(filePath), fs);
+      await fs.writeFile(filePath, data, "utf8");
+      wroteSnapshot = true;
+    } catch {
+      // Keep trying so an unsigned local build can use Application Support.
+    }
+  }
+  if (!wroteSnapshot) {
+    console.warn("Unable to write the macOS widget snapshot to any local store.");
   }
 }
 
@@ -132,6 +195,7 @@ async function loadAccountSnapshot(account) {
 async function main() {
   const runtime = await loadRuntimeConfig();
   const outputPath = path.resolve(runtime.cwd, runtime.outputFile);
+  const publicWidgetPath = path.resolve(runtime.cwd, "docs/data/widget.json");
   const accountSnapshots = await Promise.all(runtime.accounts.map(loadAccountSnapshot));
   const primarySnapshot = accountSnapshots[0] ?? {
     account: {
@@ -167,6 +231,7 @@ async function main() {
     });
 
     await writeJson(outputPath, placeholder);
+    await writeMacWidgetSnapshot(placeholder, publicWidgetPath);
     console.log(`Wrote placeholder dashboard data to ${outputPath}`);
     return;
   }
@@ -266,6 +331,7 @@ async function main() {
   });
 
   await writeJson(outputPath, payload);
+  await writeMacWidgetSnapshot(payload, publicWidgetPath);
 
   console.log(
     `Synced ${payload.summary.totalRequests} requests across ${payload.summary.totalDays} day(s) to ${outputPath}`,

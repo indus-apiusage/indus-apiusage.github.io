@@ -45,14 +45,14 @@ sync_with_remote
 
 npm run sync
 
-if git diff --quiet -- docs/data/latest.json; then
+if [ -z "$(git status --porcelain -- docs/data/latest.json docs/data/widget.json)" ]; then
   echo "No dashboard data changes detected."
   exit 0
 fi
 
 git config user.name "${GIT_COMMITTER_NAME:-github-actions[bot]}"
 git config user.email "${GIT_COMMITTER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
-git add docs/data/latest.json
+git add docs/data/latest.json docs/data/widget.json
 git commit -m "chore: refresh usage dashboard data"
 sync_with_remote
 push_with_retry

@@ -1,0 +1,409 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* main.swift */; };
+		A10000000000000000000002 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* Views.swift */; };
+		A10000000000000000000003 /* WidgetSnapshotPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* WidgetSnapshotPayload.swift */; };
+		A10000000000000000000004 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* AppKit.framework */; };
+		A10000000000000000000005 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* Foundation.framework */; };
+		A10000000000000000000006 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* Security.framework */; };
+		A10000000000000000000007 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* SwiftUI.framework */; };
+		A10000000000000000000008 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* WebKit.framework */; };
+		A10000000000000000000009 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* WidgetKit.framework */; };
+		A10000000000000000000010 /* Widget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* Widget.swift */; };
+		A10000000000000000000011 /* WidgetSnapshotPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* WidgetSnapshotPayload.swift */; };
+		A10000000000000000000012 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* Foundation.framework */; };
+		A10000000000000000000013 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* SwiftUI.framework */; };
+		A10000000000000000000014 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* WidgetKit.framework */; };
+		A10000000000000000000015 /* IndusUsageWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* IndusUsageWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C10000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10000000000000000000002;
+			remoteInfo = IndusUsageWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F10000000000000000000003 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A10000000000000000000015 /* IndusUsageWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		B10000000000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* WidgetSnapshotPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotPayload.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* Widget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Widget.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000000000000000000007 /* IndusUsageConsole.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IndusUsageConsole.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000008 /* IndusUsageWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IndusUsageWidget.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000010 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000011 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		B10000000000000000000012 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		B10000000000000000000013 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		B10000000000000000000014 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000015 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000020 /* Indus Usage Console.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Indus Usage Console.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000021 /* IndusUsageWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = IndusUsageWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F10000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000004 /* AppKit.framework in Frameworks */,
+				A10000000000000000000005 /* Foundation.framework in Frameworks */,
+				A10000000000000000000006 /* Security.framework in Frameworks */,
+				A10000000000000000000007 /* SwiftUI.framework in Frameworks */,
+				A10000000000000000000008 /* WebKit.framework in Frameworks */,
+				A10000000000000000000009 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000012 /* Foundation.framework in Frameworks */,
+				A10000000000000000000013 /* SwiftUI.framework in Frameworks */,
+				A10000000000000000000014 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		G10000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				G10000000000000000000002 /* Sources/IndusUsageConsole */,
+				G10000000000000000000003 /* ../IndusUsageWidget */,
+				G10000000000000000000004 /* Frameworks */,
+				G10000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		G10000000000000000000002 /* Sources/IndusUsageConsole */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* main.swift */,
+				B10000000000000000000002 /* Views.swift */,
+				B10000000000000000000003 /* WidgetSnapshotPayload.swift */,
+				B10000000000000000000005 /* Info.plist */,
+				B10000000000000000000007 /* IndusUsageConsole.entitlements */,
+			);
+			path = Sources/IndusUsageConsole;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000003 /* ../IndusUsageWidget */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000004 /* Widget.swift */,
+				B10000000000000000000006 /* Info.plist */,
+				B10000000000000000000008 /* IndusUsageWidget.entitlements */,
+			);
+			path = ../IndusUsageWidget;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000004 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000010 /* AppKit.framework */,
+				B10000000000000000000011 /* Foundation.framework */,
+				B10000000000000000000012 /* Security.framework */,
+				B10000000000000000000013 /* SwiftUI.framework */,
+				B10000000000000000000014 /* WebKit.framework */,
+				B10000000000000000000015 /* WidgetKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000020 /* Indus Usage Console.app */,
+				B10000000000000000000021 /* IndusUsageWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E10000000000000000000001 /* IndusUsageConsole */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = H10000000000000000000001 /* Build configuration list for PBXNativeTarget "IndusUsageConsole" */;
+			buildPhases = (
+				F10000000000000000000001 /* Frameworks */,
+				F10000000000000000000004 /* Sources */,
+				F10000000000000000000005 /* Resources */,
+				F10000000000000000000003 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				I10000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = IndusUsageConsole;
+			productName = IndusUsageConsole;
+			productReference = B10000000000000000000020 /* Indus Usage Console.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E10000000000000000000002 /* IndusUsageWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = H10000000000000000000002 /* Build configuration list for PBXNativeTarget "IndusUsageWidget" */;
+			buildPhases = (
+				F10000000000000000000002 /* Frameworks */,
+				F10000000000000000000006 /* Sources */,
+				F10000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = IndusUsageWidget;
+			productName = IndusUsageWidget;
+			productReference = B10000000000000000000021 /* IndusUsageWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					E10000000000000000000001 = {
+						CreatedOnToolsVersion = 2660;
+						ProvisioningStyle = Automatic;
+					};
+					E10000000000000000000002 = {
+						CreatedOnToolsVersion = 2660;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = H10000000000000000000003 /* Build configuration list for PBXProject "IndusUsageConsole" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = G10000000000000000000001;
+			productRefGroup = G10000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E10000000000000000000001 /* IndusUsageConsole */,
+				E10000000000000000000002 /* IndusUsageWidget */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F10000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F10000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* main.swift in Sources */,
+				A10000000000000000000002 /* Views.swift in Sources */,
+				A10000000000000000000003 /* WidgetSnapshotPayload.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000010 /* Widget.swift in Sources */,
+				A10000000000000000000011 /* WidgetSnapshotPayload.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		I10000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E10000000000000000000002 /* IndusUsageWidget */;
+			targetProxy = C10000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		H10000000000000000000004 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		H10000000000000000000005 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		H10000000000000000000006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = IndusUsageConsole.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				EXECUTABLE_NAME = IndusUsageConsole;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.indus-apiusage.console";
+				PRODUCT_NAME = "Indus Usage Console";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		H10000000000000000000007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = IndusUsageConsole.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				EXECUTABLE_NAME = IndusUsageConsole;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.indus-apiusage.console";
+				PRODUCT_NAME = "Indus Usage Console";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		H10000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ../IndusUsageWidget/IndusUsageWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = ../IndusUsageWidget/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.indus-apiusage.console.widget";
+				PRODUCT_NAME = IndusUsageWidget;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Debug;
+		};
+		H10000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ../IndusUsageWidget/IndusUsageWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = ../IndusUsageWidget/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.indus-apiusage.console.widget";
+				PRODUCT_NAME = IndusUsageWidget;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		H10000000000000000000001 /* Build configuration list for PBXNativeTarget "IndusUsageConsole" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H10000000000000000000006 /* Debug */,
+				H10000000000000000000007 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		H10000000000000000000002 /* Build configuration list for PBXNativeTarget "IndusUsageWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H10000000000000000000008 /* Debug */,
+				H10000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		H10000000000000000000003 /* Build configuration list for PBXProject "IndusUsageConsole" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H10000000000000000000004 /* Debug */,
+				H10000000000000000000005 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D10000000000000000000001 /* Project object */;
+}

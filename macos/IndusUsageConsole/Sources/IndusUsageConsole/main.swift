@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import Security
 import SwiftUI
+import WidgetKit
 
 struct IndusUsageConsoleApp: App {
     @StateObject private var model = ConsoleModel()
@@ -11,12 +12,16 @@ struct IndusUsageConsoleApp: App {
         WindowGroup {
             ConsoleRootView(model: model)
                 .preferredColorScheme(.light)
+                .onOpenURL { _ in
+                    model.section = .overview
+                }
         }
         .windowStyle(.hiddenTitleBar)
         // The dashboard contains a scroll view and responsive grids. Let AppKit
         // manage the window frame instead of recomputing content-size constraints
         // on every animation tick.
         .windowResizability(.automatic)
+
     }
 }
 
@@ -225,9 +230,17 @@ struct AccountDraft: Identifiable {
     }
 }
 
+struct WalletSessionCredentials {
+    let cookie: String
+    let authorization: String
+    let userID: String
+}
+
 struct APIKeyRecord: Identifiable {
     let accountID: UUID
     let accountLabel: String
+    let accountUserID: String
+    let accountColorIndex: Int
     let baseURL: String
     let key: StoredAPIKey
 
@@ -235,6 +248,11 @@ struct APIKeyRecord: Identifiable {
     var displayName: String {
         if key.name.caseInsensitiveCompare("zdy") == .orderedSame { return "曾德宇" }
         return key.name.isEmpty ? "未命名密钥" : key.name
+    }
+    var accountSourceText: String {
+        let label = accountLabel.isEmpty ? "未命名账号" : accountLabel
+        let userID = accountUserID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return userID.isEmpty ? label : "\(label) · UID \(userID)"
     }
     var statusText: String {
         if key.value.isEmpty { return "未设置值" }
@@ -392,6 +410,7 @@ struct SnapshotPerson: Decodable, Identifiable {
     var displayName: String
     var requests: Int
     var primaryCost: Double
+    var days: [SnapshotDay]
 
     private struct Totals: Decodable {
         var requests: Int
@@ -402,6 +421,7 @@ struct SnapshotPerson: Decodable, Identifiable {
         case personId
         case displayName
         case totals
+        case days
     }
 
     init(from decoder: Decoder) throws {
@@ -411,6 +431,7 @@ struct SnapshotPerson: Decodable, Identifiable {
         let totals = try container.decodeIfPresent(Totals.self, forKey: .totals)
         requests = totals?.requests ?? 0
         primaryCost = totals?.primaryCost ?? 0
+        days = try container.decodeIfPresent([SnapshotDay].self, forKey: .days) ?? []
     }
 
     var usageText: String {
@@ -422,10 +443,47 @@ struct SnapshotPerson: Decodable, Identifiable {
     }
 }
 
+struct SnapshotDay: Decodable, Identifiable {
+    var id: String { date }
+    var date: String
+    var requests: Int
+    var primaryCost: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case date
+        case requests
+        case primaryCost
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decodeIfPresent(String.self, forKey: .date) ?? ""
+        requests = try container.decodeIfPresent(Int.self, forKey: .requests) ?? 0
+        primaryCost = try container.decodeIfPresent(Double.self, forKey: .primaryCost) ?? 0
+    }
+
+    var usageText: String {
+        String(format: "¥%.4f", primaryCost)
+    }
+
+    var requestText: String {
+        String(format: "%d", requests)
+    }
+
+    var shortDateText: String {
+        let parts = date.split(separator: "-")
+        guard parts.count == 3,
+              let month = Int(parts[1]),
+              let day = Int(parts[2]) else { return date }
+        return "\(month)月\(day)日"
+    }
+}
+
 struct DashboardSnapshot: Decodable {
     var generatedAt: String?
     var accounts: [SnapshotAccount]
     var people: [SnapshotPerson]
+    var days: [SnapshotDay]
     var summary: SnapshotSummary?
 
     private enum CodingKeys: String, CodingKey {
@@ -433,6 +491,7 @@ struct DashboardSnapshot: Decodable {
         case accounts
         case account
         case people
+        case days
         case summary
     }
 
@@ -441,16 +500,49 @@ struct DashboardSnapshot: Decodable {
         generatedAt = try container.decodeIfPresent(String.self, forKey: .generatedAt)
         accounts = try container.decodeIfPresent([SnapshotAccount].self, forKey: .accounts) ?? []
         people = try container.decodeIfPresent([SnapshotPerson].self, forKey: .people) ?? []
+        days = try container.decodeIfPresent([SnapshotDay].self, forKey: .days) ?? []
         if accounts.isEmpty, let legacyAccount = try container.decodeIfPresent(SnapshotAccount.self, forKey: .account) {
             accounts = [legacyAccount]
         }
         summary = try container.decodeIfPresent(SnapshotSummary.self, forKey: .summary)
+    }
+
+    private var latestDataDate: String? {
+        summary?.latestDate ?? days.map(\.date).max()
+    }
+
+    var latestDay: SnapshotDay? {
+        guard let latestDataDate else { return days.max { $0.date < $1.date } }
+        return days.first(where: { $0.date == latestDataDate })
+            ?? days.max { $0.date < $1.date }
+    }
+
+    var latestMonthDays: [SnapshotDay] {
+        guard let latestDataDate else { return [] }
+        let monthPrefix = String(latestDataDate.prefix(7))
+        return days.filter { $0.date.hasPrefix(monthPrefix) }
+    }
+
+    var latestMonthUsage: Double {
+        latestMonthDays.reduce(0) { $0 + $1.primaryCost }
+    }
+
+    var latestMonthRequests: Int {
+        latestMonthDays.reduce(0) { $0 + $1.requests }
+    }
+
+    var latestMonthLabel: String {
+        guard let latestDataDate else { return "本月" }
+        let parts = latestDataDate.split(separator: "-")
+        guard parts.count >= 2, let month = Int(parts[1]) else { return "本月" }
+        return "\(month)月"
     }
 }
 
 struct SnapshotSummary: Decodable {
     var totalRequests: Int
     var totalPrimaryCost: Double
+    var latestDate: String?
 }
 
 enum SyncPhase: Equatable {
@@ -535,6 +627,7 @@ final class ConsoleModel: ObservableObject {
     @Published var logLines: [String] = []
     @Published var snapshot: DashboardSnapshot?
     @Published var editingDraft: AccountDraft?
+    @Published var topUpProfile: AccountProfile?
     @Published var showProjectPicker = false
     @Published private(set) var apiKeySyncingIDs: Set<UUID> = []
 
@@ -549,7 +642,10 @@ final class ConsoleModel: ObservableObject {
     private var pollTimer: Timer?
     private var lastLogModificationDate: Date?
     private var lastSnapshotModificationDate: Date?
-    private var runtimeRefreshInFlight = false
+    private var logRefreshInFlight = false
+    private var snapshotRefreshInFlight = false
+    private var externalLoopPID: Int32?
+    private var externalLoopProbeInFlight = false
     private var initialAPIKeySyncScheduled = false
 
     var enabledAccounts: [AccountProfile] { accounts.filter(\.enabled) }
@@ -560,19 +656,15 @@ final class ConsoleModel: ObservableObject {
                 APIKeyRecord(
                     accountID: profile.id,
                     accountLabel: profile.label.isEmpty ? profile.name : profile.label,
+                    accountUserID: profile.userID,
+                    accountColorIndex: profile.colorIndex,
                     baseURL: profile.baseURL,
                     key: key
                 )
             }
         }
     }
-    var existingLoopPID: Int32? {
-        let url = projectURL.appendingPathComponent("work/sync-loop.pid")
-        guard let raw = try? String(contentsOf: url, encoding: .utf8),
-              let value = Int32(raw.trimmingCharacters(in: .whitespacesAndNewlines)),
-              kill(value, 0) == 0 else { return nil }
-        return value
-    }
+    var existingLoopPID: Int32? { externalLoopPID }
     var projectURL: URL { URL(fileURLWithPath: settings.projectPath) }
     var credentialsReady: Bool {
         secretsLoaded && !enabledAccounts.isEmpty && enabledAccounts.allSatisfy { hasCredentials(for: $0.id) }
@@ -585,7 +677,7 @@ final class ConsoleModel: ObservableObject {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshRuntime() }
         }
-        refreshRuntime()
+        DispatchQueue.main.async { [weak self] in self?.refreshRuntime() }
         // Let the first window frame render before Keychain can show an access
         // prompt. Reading credentials is moved off the main actor as well.
         DispatchQueue.main.async { [weak self] in self?.loadSecretsInBackground() }
@@ -898,13 +990,99 @@ final class ConsoleModel: ObservableObject {
         openTopUp(for: profile)
     }
 
+    func topUpCredentials(for profile: AccountProfile) -> WalletSessionCredentials {
+        let secret = secrets[profile.id] ?? AccountSecret()
+        return WalletSessionCredentials(
+            cookie: secret.cookie,
+            authorization: secret.authorization,
+            userID: profile.userID
+        )
+    }
+
+    func persistWalletCookies(_ cookies: [HTTPCookie], for accountID: UUID, baseURL: String) {
+        guard let profile = accounts.first(where: { $0.id == accountID }),
+              let host = walletHost(from: baseURL) else { return }
+
+        var selected: [String: HTTPCookie] = [:]
+        for cookie in cookies {
+            guard cookieMatchesHost(cookie, host: host),
+                  !cookie.name.contains(";"),
+                  !cookie.value.contains(";"),
+                  !cookie.value.isEmpty else { continue }
+            if let expiresDate = cookie.expiresDate, expiresDate <= Date() { continue }
+
+            if let existing = selected[cookie.name],
+               cookieDomainSpecificity(existing, host: host) >= cookieDomainSpecificity(cookie, host: host) {
+                continue
+            }
+            selected[cookie.name] = cookie
+        }
+
+        guard selected.keys.contains(where: { $0.caseInsensitiveCompare("session") == .orderedSame }) else {
+            return
+        }
+
+        let header = selected.values
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .map { "\($0.name)=\($0.value)" }
+            .joined(separator: "; ")
+        guard !header.isEmpty else { return }
+
+        var secret = secrets[accountID] ?? AccountSecret()
+        guard secret.cookie != header else { return }
+        secret.cookie = header
+
+        do {
+            try vault.save(secret, for: accountID)
+            secrets[accountID] = secret
+            let label = profile.label.isEmpty ? profile.name : profile.label
+            eventMessage = "已保存 \(label) 的钱包登录状态，下次打开无需重新登录"
+        } catch {
+            eventMessage = "钱包登录状态保存失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func walletHost(from baseURL: String) -> String? {
+        var value = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { value = "https://www.foropencode.com" }
+        if !value.contains("://") { value = "https://\(value)" }
+        return URL(string: value)?.host?.lowercased()
+    }
+
+    private func cookieMatchesHost(_ cookie: HTTPCookie, host: String) -> Bool {
+        let domain = cookie.domain
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return domain == host || host.hasSuffix(".\(domain)") || domain.hasSuffix(".\(host)")
+    }
+
+    private func cookieDomainSpecificity(_ cookie: HTTPCookie, host: String) -> Int {
+        let domain = cookie.domain
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return domain == host ? 2 : 1
+    }
+
     func openTopUp(for profile: AccountProfile) {
+        guard websiteURL(for: profile, path: "/wallet/") != nil else {
+            eventMessage = "账号地址无效，无法打开充值页面"
+            return
+        }
+        topUpProfile = profile
+        eventMessage = "已在 App 内打开 \(profile.label) 的官方钱包，活动和金额实时读取"
+    }
+
+    func topUpURL(for profile: AccountProfile) -> URL? {
+        websiteURL(for: profile, path: "/wallet/")
+    }
+
+    func openTopUpInBrowser(for profile: AccountProfile) {
         guard let url = websiteURL(for: profile, path: "/wallet/") else {
             eventMessage = "账号地址无效，无法打开充值页面"
             return
         }
         NSWorkspace.shared.open(url)
-        eventMessage = "已打开 \(profile.label) 的充值页面"
+        eventMessage = "已在浏览器打开 \(profile.label) 的充值页面"
     }
 
     func openKeyManager(for accountID: UUID) {
@@ -967,6 +1145,10 @@ final class ConsoleModel: ObservableObject {
 
     func startSync() {
         guard loopProcess?.isRunning != true else { return }
+        guard !externalLoopProbeInFlight else {
+            eventMessage = "正在检查已有同步进程，请稍候再启动"
+            return
+        }
         guard credentialsReady else {
             phase = .failed
             eventMessage = "请先为所有启用账号补充凭据"
@@ -1029,6 +1211,10 @@ final class ConsoleModel: ObservableObject {
     }
 
     func stopSync() {
+        guard !externalLoopProbeInFlight else {
+            eventMessage = "正在检查已有同步进程，请稍候再停止"
+            return
+        }
         if ownsLoop, let process = loopProcess, process.isRunning {
             stopRequested = true
             process.terminate()
@@ -1133,36 +1319,109 @@ final class ConsoleModel: ObservableObject {
     }
 
     func refreshRuntime() {
+        refreshExternalLoopPID()
         refreshProcessState()
-        guard !runtimeRefreshInFlight else { return }
-
-        runtimeRefreshInFlight = true
         let rootURL = projectURL
-        let previousLogDate = lastLogModificationDate
-        let previousSnapshotDate = lastSnapshotModificationDate
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let logResult = Self.readLog(
-                at: rootURL.appendingPathComponent("work/sync-loop.log"),
-                previousDate: previousLogDate
-            )
-            let snapshotResult = Self.readSnapshot(
-                at: rootURL.appendingPathComponent("docs/data/latest.json"),
-                previousDate: previousSnapshotDate
-            )
 
+        if !snapshotRefreshInFlight {
+            snapshotRefreshInFlight = true
+            let previousSnapshotDate = lastSnapshotModificationDate
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let snapshotResult = Self.readSnapshot(
+                    at: rootURL.appendingPathComponent("docs/data/latest.json"),
+                    previousDate: previousSnapshotDate
+                )
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.snapshotRefreshInFlight = false
+                    if let snapshotResult {
+                        self.lastSnapshotModificationDate = snapshotResult.modificationDate
+                        self.snapshot = snapshotResult.snapshot
+                        self.publishWidgetSnapshot(snapshotResult.snapshot)
+                    }
+                    self.refreshProcessState()
+                }
+            }
+        }
+
+        if !logRefreshInFlight {
+            logRefreshInFlight = true
+            let previousLogDate = lastLogModificationDate
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let logResult = Self.readLog(
+                    at: rootURL.appendingPathComponent("work/sync-loop.log"),
+                    previousDate: previousLogDate
+                )
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.logRefreshInFlight = false
+                    if let logResult {
+                        self.lastLogModificationDate = logResult.modificationDate
+                        if logResult.lines != self.logLines { self.logLines = logResult.lines }
+                    }
+                    self.refreshProcessState()
+                }
+            }
+        }
+    }
+
+    private func refreshExternalLoopPID() {
+        guard !externalLoopProbeInFlight else { return }
+        externalLoopProbeInFlight = true
+        let pidURL = projectURL.appendingPathComponent("work/sync-loop.pid")
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let pid = Self.readPIDFile(at: pidURL)
+            let activePID = pid.flatMap { kill($0, 0) == 0 ? $0 : nil }
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.runtimeRefreshInFlight = false
-                if let logResult {
-                    self.lastLogModificationDate = logResult.modificationDate
-                    if logResult.lines != self.logLines { self.logLines = logResult.lines }
-                }
-                if let snapshotResult {
-                    self.lastSnapshotModificationDate = snapshotResult.modificationDate
-                    self.snapshot = snapshotResult.snapshot
-                }
+                self.externalLoopPID = activePID
+                self.externalLoopProbeInFlight = false
                 self.refreshProcessState()
             }
+        }
+    }
+
+    private func publishWidgetSnapshot(_ snapshot: DashboardSnapshot) {
+        let accounts = snapshot.accounts.map { account in
+            WidgetAccountPayload(
+                label: account.label,
+                balance: account.remainingPrimaryBalance,
+                usage: account.usedPrimaryCost,
+                requests: account.requestCount,
+                utilization: account.utilizationRate,
+                gptPlusRatio: account.gptPlusRatio
+            )
+        }
+        let payload = WidgetSnapshotPayload(
+            generatedAt: snapshot.generatedAt,
+            latestDate: snapshot.latestDay?.date,
+            todayUsage: snapshot.latestDay?.primaryCost ?? 0,
+            todayRequests: snapshot.latestDay?.requests ?? 0,
+            monthUsage: snapshot.latestMonthUsage,
+            monthRequests: snapshot.latestMonthRequests,
+            totalBalance: snapshot.accounts.reduce(0) { $0 + $1.remainingPrimaryBalance },
+            gptPlusRatio: snapshot.accounts.compactMap(\.gptPlusRatio).first,
+            accountCount: snapshot.accounts.count,
+            syncState: phase.title,
+            accounts: accounts
+        )
+
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        var wroteSnapshot = false
+        for url in IndusWidgetDataStore.candidateURLs {
+            do {
+                try FileManager.default.createDirectory(
+                    at: url.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try data.write(to: url, options: .atomic)
+                wroteSnapshot = true
+            } catch {
+                continue
+            }
+        }
+        if wroteSnapshot {
+            WidgetCenter.shared.reloadTimelines(ofKind: "IndusUsageWidget")
         }
     }
 
@@ -1188,6 +1447,21 @@ final class ConsoleModel: ObservableObject {
                 self.startSync()
             }
         }
+    }
+
+    nonisolated private static func readPIDFile(at url: URL) -> Int32? {
+        let descriptor = open(url.path, O_RDONLY | O_NONBLOCK)
+        guard descriptor >= 0 else { return nil }
+        defer { close(descriptor) }
+
+        var buffer = [UInt8](repeating: 0, count: 32)
+        let count = buffer.withUnsafeMutableBytes { pointer -> Int in
+            guard let baseAddress = pointer.baseAddress else { return 0 }
+            return Darwin.read(descriptor, baseAddress, pointer.count)
+        }
+        guard count > 0 else { return nil }
+        let raw = String(decoding: buffer.prefix(count), as: UTF8.self)
+        return Int32(raw.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private func loadState() {
@@ -1392,7 +1666,10 @@ final class ConsoleModel: ObservableObject {
         _ = kill(pid, SIGTERM)
 
         for _ in 0..<25 {
-            if kill(pid, 0) != 0 { return true }
+            if kill(pid, 0) != 0 {
+                externalLoopPID = nil
+                return true
+            }
             usleep(100_000)
         }
 
@@ -1401,7 +1678,8 @@ final class ConsoleModel: ObservableObject {
             usleep(100_000)
         }
 
-        return existingLoopPID == nil
+        externalLoopPID = kill(pid, 0) == 0 ? pid : nil
+        return externalLoopPID == nil
     }
 
     private func isExpectedLoopProcess(_ pid: Int32) -> Bool {
