@@ -657,11 +657,26 @@ final class ConsoleModel: ObservableObject {
                 accounts.append(draft.profile)
             }
             persistState()
+            let runtimeConfigRefreshed: Bool
+            if isLoopRunning {
+                do {
+                    _ = try writeRuntimeEnvironment()
+                    runtimeConfigRefreshed = true
+                } catch {
+                    runtimeConfigRefreshed = false
+                }
+            } else {
+                runtimeConfigRefreshed = true
+            }
             editingDraft = nil
             if remoteChanges.isEmpty {
-                eventMessage = "已将 \(draft.profile.label) 接入凭据舱，保存 API Key \(sanitizedSecret.apiKeys.count) 个"
+                eventMessage = runtimeConfigRefreshed
+                    ? "已将 \(draft.profile.label) 接入凭据舱，保存 API Key \(sanitizedSecret.apiKeys.count) 个"
+                    : "本机凭据已保存，但自动同步配置刷新失败，请重启自动同步"
             } else {
-                eventMessage = "本机已保存，正在把 \(remoteChanges.count) 个 API Key 的限额同步到网站"
+                eventMessage = runtimeConfigRefreshed
+                    ? "本机已保存，正在把 \(remoteChanges.count) 个 API Key 的限额同步到网站"
+                    : "本机已保存，但自动同步配置刷新失败，请重启自动同步"
                 Task { [weak self] in
                     await self?.updateRemoteAPIKeys(
                         remoteChanges,
