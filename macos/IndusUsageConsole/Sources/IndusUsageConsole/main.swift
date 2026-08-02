@@ -9,11 +9,15 @@ struct IndusUsageConsoleApp: App {
     @StateObject private var model = ConsoleModel()
 
     var body: some Scene {
-        WindowGroup {
+        // The widget deep link should reuse this one console window instead of
+        // opening a new WindowGroup instance on every click.
+        Window("Indus Usage Console", id: "main") {
             ConsoleRootView(model: model)
                 .preferredColorScheme(.light)
                 .onOpenURL { _ in
                     model.section = .overview
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
                 }
         }
         .windowStyle(.hiddenTitleBar)
