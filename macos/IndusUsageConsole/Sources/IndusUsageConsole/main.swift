@@ -619,10 +619,35 @@ final class ConsoleModel: ObservableObject {
         edit(profile)
     }
 
+    // Remote records come first so their metadata wins over a locally added copy.
+    private func deduplicateAPIKeys(_ keys: [StoredAPIKey]) -> [StoredAPIKey] {
+        let prioritizedKeys = keys.filter { $0.remoteID != nil } + keys.filter { $0.remoteID == nil }
+        var seenRemoteIDs = Set<Int>()
+        var seenValues = Set<String>()
+        var uniqueKeys: [StoredAPIKey] = []
+
+        for key in prioritizedKeys {
+            if let remoteID = key.remoteID, seenRemoteIDs.contains(remoteID) {
+                continue
+            }
+
+            let value = key.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty, seenValues.contains(value) {
+                continue
+            }
+
+            if let remoteID = key.remoteID { seenRemoteIDs.insert(remoteID) }
+            if !value.isEmpty { seenValues.insert(value) }
+            uniqueKeys.append(key)
+        }
+
+        return uniqueKeys
+    }
+
     func save(_ draft: AccountDraft) {
         let previousAPIKeys = secrets[draft.profile.id]?.apiKeys ?? []
         var sanitizedSecret = draft.secret
-        sanitizedSecret.apiKeys = draft.secret.apiKeys.compactMap { key in
+        let sanitizedAPIKeys: [StoredAPIKey] = draft.secret.apiKeys.compactMap { key in
             let value = key.value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { return nil }
             let name = key.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -633,6 +658,7 @@ final class ConsoleModel: ObservableObject {
             normalized.quotaLimit = quotaLimit
             return normalized
         }
+        sanitizedSecret.apiKeys = deduplicateAPIKeys(sanitizedAPIKeys)
 
         let remoteChanges = sanitizedSecret.apiKeys.filter { key in
             guard let remoteID = key.remoteID else { return false }
@@ -742,11 +768,12 @@ final class ConsoleModel: ObservableObject {
                 guard response.success else { throw APIKeyCommandError.invalidResponse }
 
                 var updatedSecret = self.secrets[accountID] ?? AccountSecret()
-                let oldRemoteKeys = Dictionary(
-                    uniqueKeysWithValues: updatedSecret.apiKeys.compactMap { key in
-                        key.remoteID.map { ($0, key) }
-                    }
-                )
+                let existingKeys = self.deduplicateAPIKeys(updatedSecret.apiKeys)
+                var oldRemoteKeys: [Int: StoredAPIKey] = [:]
+                for key in existingKeys {
+                    guard let remoteID = key.remoteID, oldRemoteKeys[remoteID] == nil else { continue }
+                    oldRemoteKeys[remoteID] = key
+                }
                 let importedKeys = response.keys.map { imported -> StoredAPIKey in
                     guard imported.value.isEmpty, let remoteID = imported.remoteID,
                           let oldKey = oldRemoteKeys[remoteID] else { return imported }
@@ -754,8 +781,8 @@ final class ConsoleModel: ObservableObject {
                     restored.value = oldKey.value
                     return restored
                 }
-                let localOnlyKeys = updatedSecret.apiKeys.filter { $0.remoteID == nil }
-                updatedSecret.apiKeys = importedKeys + localOnlyKeys
+                let localOnlyKeys = existingKeys.filter { $0.remoteID == nil }
+                updatedSecret.apiKeys = self.deduplicateAPIKeys(importedKeys + localOnlyKeys)
                 try self.vault.save(updatedSecret, for: accountID)
                 self.secrets[accountID] = updatedSecret
                 self.eventMessage = "已从网站同步 \(importedKeys.count) 个 API Key，远端限额已载入"
@@ -1184,7 +1211,14 @@ final class ConsoleModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 guard let self else { return }
-                for (id, secret) in loaded { self.secrets[id] = secret }
+                for (id, secret) in loaded {
+                    var normalizedSecret = secret
+                    normalizedSecret.apiKeys = self.deduplicateAPIKeys(secret.apiKeys)
+                    if normalizedSecret != secret {
+                        try? self.vault.save(normalizedSecret, for: id)
+                    }
+                    self.secrets[id] = normalizedSecret
+                }
                 self.secretsLoaded = true
                 self.refreshRuntime()
                 self.scheduleInitialAPIKeySync()
