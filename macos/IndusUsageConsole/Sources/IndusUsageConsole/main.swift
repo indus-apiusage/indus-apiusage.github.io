@@ -98,6 +98,16 @@ private struct StoredConsoleState: Codable {
     var settings: ConsoleSettings
 }
 
+private struct LogRefreshResult {
+    let modificationDate: Date
+    let lines: [String]
+}
+
+private struct SnapshotRefreshResult {
+    let modificationDate: Date
+    let snapshot: DashboardSnapshot
+}
+
 struct SnapshotAccount: Decodable, Identifiable {
     var id: String
     var label: String
@@ -323,9 +333,11 @@ final class ConsoleModel: ObservableObject {
     private var ownsLoop = false
     private var autoStartScheduled = false
     private var stopRequested = false
+    private var secretsLoaded = false
     private var pollTimer: Timer?
     private var lastLogModificationDate: Date?
     private var lastSnapshotModificationDate: Date?
+    private var runtimeRefreshInFlight = false
 
     var enabledAccounts: [AccountProfile] { accounts.filter(\.enabled) }
     var isLoopRunning: Bool { loopProcess?.isRunning == true || existingLoopPID != nil }
@@ -338,7 +350,7 @@ final class ConsoleModel: ObservableObject {
     }
     var projectURL: URL { URL(fileURLWithPath: settings.projectPath) }
     var credentialsReady: Bool {
-        !enabledAccounts.isEmpty && enabledAccounts.allSatisfy { hasCredentials(for: $0.id) }
+        secretsLoaded && !enabledAccounts.isEmpty && enabledAccounts.allSatisfy { hasCredentials(for: $0.id) }
     }
 
     init() {
@@ -349,9 +361,9 @@ final class ConsoleModel: ObservableObject {
             Task { @MainActor in self?.refreshRuntime() }
         }
         refreshRuntime()
-        if settings.autoSync {
-            DispatchQueue.main.async { [weak self] in self?.startSync() }
-        }
+        // Let the first window frame render before Keychain can show an access
+        // prompt. Reading credentials is moved off the main actor as well.
+        DispatchQueue.main.async { [weak self] in self?.loadSecretsInBackground() }
     }
 
     deinit {
@@ -409,7 +421,39 @@ final class ConsoleModel: ObservableObject {
     func setAutoSync(_ enabled: Bool) {
         settings.autoSync = enabled
         persistState()
-        if enabled { startSync() } else { stopSync() }
+        if enabled {
+            guard secretsLoaded else {
+                eventMessage = "正在读取 Keychain，凭据就绪后会自动启动同步"
+                return
+            }
+            startSync()
+        } else {
+            stopSync()
+        }
+    }
+
+    func setIntervalMinutes(_ minutes: Int) {
+        let value = min(max(minutes, 1), 1440)
+        guard settings.intervalMinutes != value else { return }
+        settings.intervalMinutes = value
+        persistState()
+
+        guard isLoopRunning else {
+            eventMessage = "同步间隔已设为每 \(value) 分钟"
+            return
+        }
+
+        guard loopProcess?.isRunning == true else {
+            eventMessage = "同步间隔已更新；请用 App 启动循环后生效"
+            return
+        }
+
+        do {
+            _ = try writeRuntimeEnvironment()
+            eventMessage = "同步间隔已更新为每 \(value) 分钟，将在下一周期生效"
+        } catch {
+            eventMessage = "同步间隔已保存，但运行配置写入失败：\(error.localizedDescription)"
+        }
     }
 
     func startSync() {
@@ -456,7 +500,7 @@ final class ConsoleModel: ObservableObject {
                     self.removeRuntimeEnvironment()
                     if !self.stopRequested && process.terminationStatus != 0 {
                         self.phase = .failed
-                        self.eventMessage = "自动同步进程已退出（状态 (process.terminationStatus)），请查看日志"
+                        self.eventMessage = "自动同步进程已退出（状态 \(process.terminationStatus)），请查看日志"
                     } else if self.stopRequested {
                         self.phase = .idle
                     }
@@ -580,8 +624,40 @@ final class ConsoleModel: ObservableObject {
     }
 
     func refreshRuntime() {
-        refreshLog()
-        loadSnapshot()
+        refreshProcessState()
+        guard !runtimeRefreshInFlight else { return }
+
+        runtimeRefreshInFlight = true
+        let rootURL = projectURL
+        let previousLogDate = lastLogModificationDate
+        let previousSnapshotDate = lastSnapshotModificationDate
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let logResult = Self.readLog(
+                at: rootURL.appendingPathComponent("work/sync-loop.log"),
+                previousDate: previousLogDate
+            )
+            let snapshotResult = Self.readSnapshot(
+                at: rootURL.appendingPathComponent("docs/data/latest.json"),
+                previousDate: previousSnapshotDate
+            )
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.runtimeRefreshInFlight = false
+                if let logResult {
+                    self.lastLogModificationDate = logResult.modificationDate
+                    if logResult.lines != self.logLines { self.logLines = logResult.lines }
+                }
+                if let snapshotResult {
+                    self.lastSnapshotModificationDate = snapshotResult.modificationDate
+                    self.snapshot = snapshotResult.snapshot
+                }
+                self.refreshProcessState()
+            }
+        }
+    }
+
+    private func refreshProcessState() {
         if loopProcess?.isRunning != true, let _ = existingLoopPID {
             if phase != .running { phase = .running }
             if ownsLoop { ownsLoop = false }
@@ -612,9 +688,26 @@ final class ConsoleModel: ObservableObject {
             accounts = stored.accounts
             settings = stored.settings
         }
-        for account in accounts { secrets[account.id] = vault.read(for: account.id) }
         if settings.proxy.isEmpty { settings.proxy = localEnvValue("FOROPENCODE_PROXY") }
         if settings.sshKeyPath.isEmpty { settings.sshKeyPath = localEnvValue("SYNC_GIT_SSH_KEY_PATH") }
+    }
+
+    private func loadSecretsInBackground() {
+        let accountIDs = accounts.map(\.id)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let vault = KeychainVault()
+            var loaded: [UUID: AccountSecret] = [:]
+            for id in accountIDs {
+                if let secret = vault.read(for: id) { loaded[id] = secret }
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                for (id, secret) in loaded { self.secrets[id] = secret }
+                self.secretsLoaded = true
+                self.refreshRuntime()
+                if self.settings.autoSync { self.startSync() }
+            }
+        }
     }
 
     func persistState() {
@@ -711,28 +804,24 @@ final class ConsoleModel: ObservableObject {
         return command.contains("run-local-sync-loop.sh")
     }
 
-    private func refreshLog() {
-        let logURL = projectURL.appendingPathComponent("work/sync-loop.log")
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: logURL.path),
-              let modificationDate = attributes[.modificationDate] as? Date else { return }
-        guard modificationDate != lastLogModificationDate else { return }
-        guard let text = try? String(contentsOf: logURL, encoding: .utf8) else { return }
-        let updatedLines = text.split(separator: "\n", omittingEmptySubsequences: false)
+    nonisolated private static func readLog(at url: URL, previousDate: Date?) -> LogRefreshResult? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let modificationDate = attributes[.modificationDate] as? Date,
+              modificationDate != previousDate,
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
             .suffix(90)
             .map(String.init)
-        lastLogModificationDate = modificationDate
-        if updatedLines != logLines { logLines = updatedLines }
+        return LogRefreshResult(modificationDate: modificationDate, lines: lines)
     }
 
-    private func loadSnapshot() {
-        let url = projectURL.appendingPathComponent("docs/data/latest.json")
+    nonisolated private static func readSnapshot(at url: URL, previousDate: Date?) -> SnapshotRefreshResult? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let modificationDate = attributes[.modificationDate] as? Date else { return }
-        guard modificationDate != lastSnapshotModificationDate else { return }
-        guard let data = try? Data(contentsOf: url),
-              let value = try? JSONDecoder().decode(DashboardSnapshot.self, from: data) else { return }
-        lastSnapshotModificationDate = modificationDate
-        snapshot = value
+              let modificationDate = attributes[.modificationDate] as? Date,
+              modificationDate != previousDate,
+              let data = try? Data(contentsOf: url),
+              let snapshot = try? JSONDecoder().decode(DashboardSnapshot.self, from: data) else { return nil }
+        return SnapshotRefreshResult(modificationDate: modificationDate, snapshot: snapshot)
     }
 
     private func appendLog(_ text: String) {

@@ -9,9 +9,11 @@ LOG_FILE="${ROOT_DIR}/work/sync-loop.log"
 ENV_FILE="${SYNC_ENV_FILE:-${ROOT_DIR}/work/sync.env}"
 SYNC_INTERVAL_SECONDS="${SYNC_INTERVAL_SECONDS:-300}"
 
-if ! [[ "$SYNC_INTERVAL_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
-  SYNC_INTERVAL_SECONDS=300
-fi
+normalize_interval() {
+  if ! [[ "${SYNC_INTERVAL_SECONDS:-}" =~ ^[1-9][0-9]*$ ]]; then
+    SYNC_INTERVAL_SECONDS=300
+  fi
+}
 
 mkdir -p "${ROOT_DIR}/work"
 
@@ -19,6 +21,7 @@ if [ -f "$ENV_FILE" ]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
 fi
+normalize_interval
 
 if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
   export GIT_SSH_COMMAND="ssh -i '${SYNC_GIT_SSH_KEY_PATH}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
@@ -106,5 +109,12 @@ while true; do
     log_message "Sync cycle skipped"
   fi
 
+  # The App may update this file while the loop is sleeping. Re-read it before
+  # the next wait so an interval change takes effect without restarting data work.
+  if [ -f "$ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+  fi
+  normalize_interval
   sleep "$SYNC_INTERVAL_SECONDS"
 done

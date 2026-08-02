@@ -101,7 +101,6 @@ struct SidebarView: View {
                 Circle()
                     .fill(Color(hex: 0x79E4B1))
                     .frame(width: 7, height: 7)
-                    .shadow(color: Color(hex: 0x79E4B1).opacity(0.45), radius: 3)
                 Text("LOCAL CONSOLE")
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .tracking(1.3)
@@ -140,7 +139,6 @@ struct BrandLockup: View {
                     .rotationEffect(.degrees(45))
             }
             .frame(width: 42, height: 42)
-            .shadow(color: ConsolePalette.cyan.opacity(0.35), radius: 18)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("INDUS")
@@ -180,7 +178,6 @@ struct SidebarButton: View {
                     Circle()
                         .fill(ConsolePalette.cyan)
                         .frame(width: 5, height: 5)
-                        .shadow(color: ConsolePalette.cyan.opacity(0.55), radius: 3)
                 }
             }
             .foregroundStyle(selected ? ConsolePalette.ink : ConsolePalette.muted)
@@ -222,7 +219,6 @@ struct SidebarSyncBadge: View {
                 Circle()
                     .fill(model.phase.color)
                     .frame(width: 7, height: 7)
-                    .shadow(color: model.phase.color.opacity(0.55), radius: 3)
             }
             Text(model.phase.title)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -497,8 +493,6 @@ struct HeroOrbitalDisplay: View {
                     )
                 )
                 .frame(width: 58, height: 58)
-                .blur(radius: 0.2)
-                .shadow(color: phase.color.opacity(0.55), radius: 10)
             Circle()
                 .stroke(ConsolePalette.ink.opacity(0.35), lineWidth: 1)
                 .frame(width: 17, height: 17)
@@ -667,7 +661,6 @@ struct AccountRow: View {
             Circle()
                 .fill(model.hasCredentials(for: profile.id) ? Color(hex: 0x79E4B1) : Color(hex: 0xFF8FA9))
                 .frame(width: 7, height: 7)
-                .shadow(color: model.hasCredentials(for: profile.id) ? Color(hex: 0x79E4B1).opacity(0.5) : Color(hex: 0xFF8FA9).opacity(0.5), radius: 3)
             Toggle("", isOn: Binding(
                 get: { profile.enabled },
                 set: { model.setEnabled($0, for: profile.id) }
@@ -774,7 +767,6 @@ struct SyncOrb: View {
             Image(systemName: phase == .running ? "arrow.triangle.2.circlepath" : "waveform.path")
                 .font(.system(size: 23, weight: .light))
                 .foregroundStyle(phase.color)
-                .shadow(color: phase.color.opacity(0.55), radius: 6)
         }
     }
 }
@@ -1023,7 +1015,7 @@ struct SettingsView: View {
                                 .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                         }
                     }
-                    SettingRow(title: "自动同步", detail: "开启后 App 会启动现有五分钟循环") {
+                    SettingRow(title: "自动同步", detail: "开启后 App 会按设定间隔运行同步循环") {
                         Toggle("", isOn: Binding(
                             get: { model.settings.autoSync },
                             set: { model.setAutoSync($0) }
@@ -1031,11 +1023,11 @@ struct SettingsView: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                     }
-                    SettingRow(title: "同步间隔", detail: "当前脚本固定为 5 分钟；此项用于界面显示与后续扩展") {
+                    SettingRow(title: "同步间隔", detail: "支持 1–1440 分钟，运行中将在下一周期生效") {
                         Stepper("\(model.settings.intervalMinutes) 分钟", value: Binding(
                             get: { model.settings.intervalMinutes },
-                            set: { model.settings.intervalMinutes = $0; model.persistState() }
-                        ), in: 1...60)
+                            set: { model.setIntervalMinutes($0) }
+                        ), in: 1...1440)
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                     }
                     SettingRow(title: "网络代理", detail: "例如 http://127.0.0.1:7897，留空使用系统环境") {
@@ -1369,7 +1361,6 @@ struct GlassCard<Content: View>: View {
                         lineWidth: 1
                     )
             }
-            .shadow(color: Color(hex: 0x6B7C99).opacity(0.13), radius: 10, y: 6)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -1394,31 +1385,19 @@ struct GlassButtonStyle: ButtonStyle {
 struct LiquidBackdrop: View {
     var body: some View {
         ZStack {
-            ConsolePalette.canvas
-            RadialGradient(
-                colors: [ConsolePalette.cyan.opacity(0.15), Color.clear],
-                center: .center,
-                startRadius: 20,
-                endRadius: 280
+            LinearGradient(
+                colors: [ConsolePalette.canvas, Color(hex: 0xF7F8FC), Color(hex: 0xF0F3F9)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
-            .frame(width: 520, height: 520)
-            .offset(x: -300, y: -260)
-            RadialGradient(
-                colors: [ConsolePalette.pink.opacity(0.13), Color.clear],
-                center: .center,
-                startRadius: 20,
-                endRadius: 250
-            )
-            .frame(width: 460, height: 460)
-            .offset(x: 310, y: 250)
-            RadialGradient(
-                colors: [ConsolePalette.blue.opacity(0.1), Color.clear],
-                center: .center,
-                startRadius: 20,
-                endRadius: 220
-            )
-            .frame(width: 380, height: 380)
-            .offset(x: 180, y: -40)
+            Circle()
+                .fill(ConsolePalette.cyan.opacity(0.06))
+                .frame(width: 360, height: 360)
+                .offset(x: -360, y: -260)
+            Circle()
+                .fill(ConsolePalette.pink.opacity(0.055))
+                .frame(width: 320, height: 320)
+                .offset(x: 360, y: 280)
         }
         .ignoresSafeArea()
     }
