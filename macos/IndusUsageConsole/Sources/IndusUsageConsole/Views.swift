@@ -842,12 +842,28 @@ struct APIKeyVaultView: View {
         VStack(alignment: .leading, spacing: 18) {
             GlassCard {
                 PanelHeader(eyebrow: "KEY VAULT", title: "API 密钥", detail: "多个账号的密钥集中管理，完整值只保存在 macOS Keychain") {
-                    Button {
-                        model.section = .accounts
-                    } label: {
-                        Label("去账号矩阵添加", systemImage: "plus")
+                    HStack(spacing: 8) {
+                        if !model.accounts.isEmpty {
+                            Menu {
+                                ForEach(model.accounts) { profile in
+                                    Button {
+                                        model.syncRemoteAPIKeys(for: profile.id)
+                                    } label: {
+                                        Text(profile.label.isEmpty ? profile.name : profile.label)
+                                    }
+                                }
+                            } label: {
+                                Label("从网站同步", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
+                        }
+                        Button {
+                            model.section = .accounts
+                        } label: {
+                            Label("去账号矩阵添加", systemImage: "plus")
+                        }
+                        .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                     }
-                    .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
                 }
 
                 if model.apiKeyRecords.isEmpty {
@@ -947,6 +963,16 @@ struct APIKeyVaultRow: View {
             .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
             .help("调整 API Key 限额")
             Button {
+                model.syncAPIKeyQuota(record)
+            } label: {
+                Image(systemName: model.isAPIKeySyncing(for: record.accountID)
+                    ? "arrow.triangle.2.circlepath"
+                    : "arrow.up.circle")
+            }
+            .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
+            .disabled(model.isAPIKeySyncing(for: record.accountID))
+            .help("将当前限额同步到网站")
+            Button {
                 model.openKeyManager(for: record.accountID)
             } label: {
                 Image(systemName: "safari")
@@ -963,6 +989,64 @@ struct APIKeyVaultRow: View {
         .padding(12)
         .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
+    }
+}
+
+private struct APIKeyEditorRow: View {
+    @Binding var apiKey: StoredAPIKey
+    let onDelete: () -> Void
+    @State private var quotaText: String
+
+    init(apiKey: Binding<StoredAPIKey>, onDelete: @escaping () -> Void) {
+        self._apiKey = apiKey
+        self.onDelete = onDelete
+        self._quotaText = State(initialValue: apiKey.wrappedValue.quotaLimit.map {
+            String(format: "%.6f", $0)
+        } ?? "")
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("名称", text: $apiKey.name)
+                .editorTextField()
+                .frame(minWidth: 110, idealWidth: 150)
+            SecureField("sk-...", text: $apiKey.value)
+                .editorTextField()
+                .layoutPriority(1)
+            TextField("剩余限额 ¥", text: $quotaText)
+                .editorTextField()
+                .frame(width: 96)
+                .onChange(of: quotaText) { newValue in
+                    let normalized = newValue
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .replacingOccurrences(of: ",", with: ".")
+                    apiKey.quotaLimit = normalized.isEmpty ? nil : Double(normalized)
+                }
+                .onSubmit { commitQuota() }
+            Toggle("无限", isOn: $apiKey.unlimitedQuota)
+                .toggleStyle(.switch)
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .frame(width: 54)
+            Button(action: onDelete) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(ConsolePalette.soft)
+            }
+            .buttonStyle(.plain)
+            .help("移除这条 API Key")
+        }
+    }
+
+    private func commitQuota() {
+        let normalized = quotaText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        if let value = Double(normalized), value.isFinite, value >= 0 {
+            apiKey.quotaLimit = value
+            quotaText = String(format: "%.6f", value)
+        } else if normalized.isEmpty {
+            apiKey.quotaLimit = nil
+            quotaText = ""
+        }
     }
 }
 
@@ -1330,7 +1414,7 @@ struct AccountEditorView: View {
                                     .editorTextField()
                             }
                         }
-                        EditorField(title: "API KEYS", hint: "可添加多个，完整值只保存到 Keychain") {
+                        EditorField(title: "API KEYS", hint: "可添加多个；保存后会通过网站接口同步名称、剩余限额和无限额度状态") {
                             VStack(alignment: .leading, spacing: 9) {
                                 if draft.secret.apiKeys.isEmpty {
                                     Text("尚未添加 API Key")
@@ -1338,39 +1422,9 @@ struct AccountEditorView: View {
                                         .foregroundStyle(ConsolePalette.soft)
                                 }
                                 ForEach($draft.secret.apiKeys) { apiKey in
-                                    HStack(spacing: 8) {
-                                        TextField("名称", text: apiKey.name)
-                                            .editorTextField()
-                                            .frame(width: 150)
-                                        SecureField("sk-...", text: apiKey.value)
-                                            .editorTextField()
-                                        TextField("限额", text: Binding(
-                                            get: {
-                                                apiKey.wrappedValue.quotaLimit.map { String(format: "%.2f", $0) } ?? ""
-                                            },
-                                            set: { value in
-                                                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                                                apiKey.wrappedValue.quotaLimit = normalized.isEmpty ? nil : Double(normalized)
-                                            }
-                                        ))
-                                        .editorTextField()
-                                        .frame(width: 82)
-                                        Toggle("无限", isOn: Binding(
-                                            get: { apiKey.wrappedValue.unlimitedQuota },
-                                            set: { apiKey.wrappedValue.unlimitedQuota = $0 }
-                                        ))
-                                        .toggleStyle(.switch)
-                                        .font(.system(size: 9, weight: .medium, design: .rounded))
-                                        .frame(width: 54)
-                                        Button {
-                                            let id = apiKey.wrappedValue.id
-                                            draft.secret.apiKeys.removeAll { $0.id == id }
-                                        } label: {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .foregroundStyle(ConsolePalette.soft)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("移除这条 API Key")
+                                    APIKeyEditorRow(apiKey: apiKey) {
+                                        let id = apiKey.wrappedValue.id
+                                        draft.secret.apiKeys.removeAll { $0.id == id }
                                     }
                                 }
                                 Button {
@@ -1399,7 +1453,7 @@ struct AccountEditorView: View {
                     Spacer()
                     Button("取消") { dismiss() }
                         .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
-                    Button("保存并接入") {
+                    Button("保存并同步") {
                         onSave(draft)
                         dismiss()
                     }

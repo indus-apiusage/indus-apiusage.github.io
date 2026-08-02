@@ -72,49 +72,97 @@ struct AccountProfile: Codable, Identifiable, Equatable {
 
 struct StoredAPIKey: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
+    var remoteID: Int?
     var name: String = "未命名密钥"
     var value: String = ""
     var quotaLimit: Double?
     var unlimitedQuota: Bool = false
+    var usedQuota: Double?
+    var expiredTime: Int = -1
+    var modelLimitsEnabled: Bool = false
+    var modelLimits: String = ""
+    var allowIPs: String = ""
+    var group: String = ""
+    var crossGroupRetry: Bool = false
 
     private enum CodingKeys: String, CodingKey {
         case id
+        case remoteID
         case name
         case value
         case quotaLimit
         case unlimitedQuota
+        case usedQuota
+        case expiredTime
+        case modelLimitsEnabled
+        case modelLimits
+        case allowIPs
+        case group
+        case crossGroupRetry
     }
 
     init(
         id: UUID = UUID(),
+        remoteID: Int? = nil,
         name: String = "未命名密钥",
         value: String = "",
         quotaLimit: Double? = nil,
-        unlimitedQuota: Bool = false
+        unlimitedQuota: Bool = false,
+        usedQuota: Double? = nil,
+        expiredTime: Int = -1,
+        modelLimitsEnabled: Bool = false,
+        modelLimits: String = "",
+        allowIPs: String = "",
+        group: String = "",
+        crossGroupRetry: Bool = false
     ) {
         self.id = id
+        self.remoteID = remoteID
         self.name = name
         self.value = value
         self.quotaLimit = quotaLimit
         self.unlimitedQuota = unlimitedQuota
+        self.usedQuota = usedQuota
+        self.expiredTime = expiredTime
+        self.modelLimitsEnabled = modelLimitsEnabled
+        self.modelLimits = modelLimits
+        self.allowIPs = allowIPs
+        self.group = group
+        self.crossGroupRetry = crossGroupRetry
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        remoteID = try container.decodeIfPresent(Int.self, forKey: .remoteID)
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? "未命名密钥"
         value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
         quotaLimit = try container.decodeIfPresent(Double.self, forKey: .quotaLimit)
         unlimitedQuota = try container.decodeIfPresent(Bool.self, forKey: .unlimitedQuota) ?? false
+        usedQuota = try container.decodeIfPresent(Double.self, forKey: .usedQuota)
+        expiredTime = try container.decodeIfPresent(Int.self, forKey: .expiredTime) ?? -1
+        modelLimitsEnabled = try container.decodeIfPresent(Bool.self, forKey: .modelLimitsEnabled) ?? false
+        modelLimits = try container.decodeIfPresent(String.self, forKey: .modelLimits) ?? ""
+        allowIPs = try container.decodeIfPresent(String.self, forKey: .allowIPs) ?? ""
+        group = try container.decodeIfPresent(String.self, forKey: .group) ?? ""
+        crossGroupRetry = try container.decodeIfPresent(Bool.self, forKey: .crossGroupRetry) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(remoteID, forKey: .remoteID)
         try container.encode(name, forKey: .name)
         try container.encode(value, forKey: .value)
         try container.encodeIfPresent(quotaLimit, forKey: .quotaLimit)
         try container.encode(unlimitedQuota, forKey: .unlimitedQuota)
+        try container.encodeIfPresent(usedQuota, forKey: .usedQuota)
+        try container.encode(expiredTime, forKey: .expiredTime)
+        try container.encode(modelLimitsEnabled, forKey: .modelLimitsEnabled)
+        try container.encode(modelLimits, forKey: .modelLimits)
+        try container.encode(allowIPs, forKey: .allowIPs)
+        try container.encode(group, forKey: .group)
+        try container.encode(crossGroupRetry, forKey: .crossGroupRetry)
     }
 }
 
@@ -184,15 +232,21 @@ struct APIKeyRecord: Identifiable {
     let key: StoredAPIKey
 
     var id: String { "\(accountID.uuidString)-\(key.id.uuidString)" }
-    var displayName: String { key.name.isEmpty ? "未命名密钥" : key.name }
+    var displayName: String {
+        if key.name.caseInsensitiveCompare("zdy") == .orderedSame { return "曾德宇" }
+        return key.name.isEmpty ? "未命名密钥" : key.name
+    }
     var statusText: String {
         if key.value.isEmpty { return "未设置值" }
         return "已安全保存 · \(quotaText)"
     }
     var quotaText: String {
         if key.unlimitedQuota { return "无限额度" }
-        guard let quotaLimit = key.quotaLimit else { return "未设置限额" }
-        return String(format: "限额 %.2f", quotaLimit)
+        let remaining = key.quotaLimit.map { String(format: "剩余 ¥%.2f", $0) } ?? "未设置限额"
+        if let usedQuota = key.usedQuota {
+            return "\(remaining) · 已用 ¥\(String(format: "%.2f", usedQuota))"
+        }
+        return remaining
     }
 }
 
@@ -209,6 +263,49 @@ struct ConsoleSettings: Codable, Equatable {
 private struct StoredConsoleState: Codable {
     var accounts: [AccountProfile]
     var settings: ConsoleSettings
+}
+
+private struct APIKeySyncResponse: Decodable {
+    var success: Bool
+    var accountID: String
+    var quotaPerUnit: Double
+    var quotaDisplayType: String
+    var keys: [StoredAPIKey]
+}
+
+private struct APIKeyUpdateInput: Encodable {
+    var remoteID: Int
+    var name: String
+    var quotaLimit: Double?
+    var unlimitedQuota: Bool
+    var expiredTime: Int
+    var modelLimitsEnabled: Bool
+    var modelLimits: String
+    var allowIPs: String
+    var group: String
+    var crossGroupRetry: Bool
+}
+
+private struct APIKeyUpdateResponse: Decodable {
+    var success: Bool
+    var accountID: String?
+    var remoteID: Int?
+    var quotaLimit: Double?
+    var unlimitedQuota: Bool?
+}
+
+private enum APIKeyCommandError: LocalizedError {
+    case invalidResponse
+    case missingNode
+    case processFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse: return "网站返回了无法识别的 API Key 响应"
+        case .missingNode: return "找不到 Node.js 运行时"
+        case .processFailed: return "API Key 管理命令执行失败"
+        }
+    }
 }
 
 private struct LogRefreshResult {
@@ -438,6 +535,7 @@ final class ConsoleModel: ObservableObject {
     @Published var snapshot: DashboardSnapshot?
     @Published var editingDraft: AccountDraft?
     @Published var showProjectPicker = false
+    @Published private(set) var apiKeySyncingIDs: Set<UUID> = []
 
     private let vault = KeychainVault()
     private var secrets: [UUID: AccountSecret] = [:]
@@ -451,6 +549,7 @@ final class ConsoleModel: ObservableObject {
     private var lastLogModificationDate: Date?
     private var lastSnapshotModificationDate: Date?
     private var runtimeRefreshInFlight = false
+    private var initialAPIKeySyncScheduled = false
 
     var enabledAccounts: [AccountProfile] { accounts.filter(\.enabled) }
     var isLoopRunning: Bool { loopProcess?.isRunning == true || existingLoopPID != nil }
@@ -520,19 +619,32 @@ final class ConsoleModel: ObservableObject {
     }
 
     func save(_ draft: AccountDraft) {
+        let previousAPIKeys = secrets[draft.profile.id]?.apiKeys ?? []
         var sanitizedSecret = draft.secret
         sanitizedSecret.apiKeys = draft.secret.apiKeys.compactMap { key in
             let value = key.value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { return nil }
             let name = key.name.trimmingCharacters(in: .whitespacesAndNewlines)
             let quotaLimit = key.quotaLimit.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
-            return StoredAPIKey(
-                id: key.id,
-                name: name.isEmpty ? "未命名密钥" : name,
-                value: value,
-                quotaLimit: quotaLimit,
-                unlimitedQuota: key.unlimitedQuota
-            )
+            var normalized = key
+            normalized.name = name.isEmpty ? "未命名密钥" : name
+            normalized.value = value
+            normalized.quotaLimit = quotaLimit
+            return normalized
+        }
+
+        let remoteChanges = sanitizedSecret.apiKeys.filter { key in
+            guard let remoteID = key.remoteID else { return false }
+            let previous = previousAPIKeys.first(where: { $0.remoteID == remoteID })
+            return previous == nil || previous?.name != key.name ||
+                previous?.quotaLimit != key.quotaLimit ||
+                previous?.unlimitedQuota != key.unlimitedQuota ||
+                previous?.expiredTime != key.expiredTime ||
+                previous?.modelLimitsEnabled != key.modelLimitsEnabled ||
+                previous?.modelLimits != key.modelLimits ||
+                previous?.allowIPs != key.allowIPs ||
+                previous?.group != key.group ||
+                previous?.crossGroupRetry != key.crossGroupRetry
         }
 
         do {
@@ -545,7 +657,18 @@ final class ConsoleModel: ObservableObject {
             }
             persistState()
             editingDraft = nil
-            eventMessage = "已将 \(draft.profile.label) 接入凭据舱，保存 API Key \(sanitizedSecret.apiKeys.count) 个"
+            if remoteChanges.isEmpty {
+                eventMessage = "已将 \(draft.profile.label) 接入凭据舱，保存 API Key \(sanitizedSecret.apiKeys.count) 个"
+            } else {
+                eventMessage = "本机已保存，正在把 \(remoteChanges.count) 个 API Key 的限额同步到网站"
+                Task { [weak self] in
+                    await self?.updateRemoteAPIKeys(
+                        remoteChanges,
+                        accountID: draft.profile.id,
+                        accountLabel: draft.profile.label
+                    )
+                }
+            }
         } catch {
             eventMessage = "Keychain 保存失败：\(error.localizedDescription)"
         }
@@ -568,6 +691,127 @@ final class ConsoleModel: ObservableObject {
 
     func apiKeyCount(for id: UUID) -> Int {
         secrets[id]?.apiKeys.count ?? 0
+    }
+
+    func isAPIKeySyncing(for id: UUID) -> Bool {
+        apiKeySyncingIDs.contains(id)
+    }
+
+    func syncRemoteAPIKeys(for accountID: UUID, announce: Bool = true) {
+        guard !apiKeySyncingIDs.contains(accountID) else {
+            if announce { eventMessage = "这个账号的 API Key 正在同步，请稍候" }
+            return
+        }
+        guard let profile = accounts.first(where: { $0.id == accountID }) else {
+            if announce { eventMessage = "找不到对应账号" }
+            return
+        }
+        guard secretsLoaded, hasCredentials(for: accountID) else {
+            if announce { eventMessage = "请先为该账号补充凭据，才能从网站读取 API Key" }
+            return
+        }
+
+        apiKeySyncingIDs.insert(accountID)
+        if announce { eventMessage = "正在从 \(profile.label) 的网站读取 API Key" }
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.apiKeySyncingIDs.remove(accountID) }
+
+            do {
+                let runtimeID = try self.runtimeAccountIdentifier(for: profile)
+                let data = try await self.runAPIKeyCommand(
+                    ["list", "--account-id", runtimeID]
+                )
+                let response = try JSONDecoder().decode(APIKeySyncResponse.self, from: data)
+                guard response.success else { throw APIKeyCommandError.invalidResponse }
+
+                var updatedSecret = self.secrets[accountID] ?? AccountSecret()
+                let oldRemoteKeys = Dictionary(
+                    uniqueKeysWithValues: updatedSecret.apiKeys.compactMap { key in
+                        key.remoteID.map { ($0, key) }
+                    }
+                )
+                let importedKeys = response.keys.map { imported -> StoredAPIKey in
+                    guard imported.value.isEmpty, let remoteID = imported.remoteID,
+                          let oldKey = oldRemoteKeys[remoteID] else { return imported }
+                    var restored = imported
+                    restored.value = oldKey.value
+                    return restored
+                }
+                let localOnlyKeys = updatedSecret.apiKeys.filter { $0.remoteID == nil }
+                updatedSecret.apiKeys = importedKeys + localOnlyKeys
+                try self.vault.save(updatedSecret, for: accountID)
+                self.secrets[accountID] = updatedSecret
+                self.eventMessage = "已从网站同步 \(importedKeys.count) 个 API Key，远端限额已载入"
+            } catch {
+                if announce {
+                    self.eventMessage = "网站 API Key 同步失败：请检查登录凭据、用户 ID 和网络设置"
+                }
+            }
+        }
+    }
+
+    func syncAPIKeyQuota(_ record: APIKeyRecord) {
+        guard let profile = accounts.first(where: { $0.id == record.accountID }),
+              let key = secrets[record.accountID]?.apiKeys.first(where: { $0.id == record.key.id }),
+              key.remoteID != nil else {
+            eventMessage = "这条 API Key 没有远端 ID，无法同步限额；请先从网站同步"
+            return
+        }
+        guard !apiKeySyncingIDs.contains(record.accountID) else {
+            eventMessage = "这个账号正在同步 API Key，请稍候"
+            return
+        }
+
+        apiKeySyncingIDs.insert(record.accountID)
+        eventMessage = "正在把 \(record.displayName) 的限额同步到网站"
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.apiKeySyncingIDs.remove(record.accountID) }
+            await self.updateRemoteAPIKeys([key], accountID: record.accountID, accountLabel: profile.label)
+        }
+    }
+
+    private func updateRemoteAPIKeys(
+        _ keys: [StoredAPIKey],
+        accountID: UUID,
+        accountLabel: String
+    ) async {
+        do {
+            let profile = try accountProfile(for: accountID)
+            let runtimeID = try runtimeAccountIdentifier(for: profile)
+            var updatedCount = 0
+
+            for key in keys {
+                guard let remoteID = key.remoteID else { continue }
+                let input = APIKeyUpdateInput(
+                    remoteID: remoteID,
+                    name: key.name,
+                    quotaLimit: key.quotaLimit,
+                    unlimitedQuota: key.unlimitedQuota,
+                    expiredTime: key.expiredTime,
+                    modelLimitsEnabled: key.modelLimitsEnabled,
+                    modelLimits: key.modelLimits,
+                    allowIPs: key.allowIPs,
+                    group: key.group,
+                    crossGroupRetry: key.crossGroupRetry
+                )
+                let inputData = try JSONEncoder().encode(input)
+                let output = try await runAPIKeyCommand(
+                    ["update", "--account-id", runtimeID],
+                    input: inputData
+                )
+                let response = try JSONDecoder().decode(APIKeyUpdateResponse.self, from: output)
+                guard response.success else { throw APIKeyCommandError.invalidResponse }
+                updatedCount += 1
+            }
+
+            eventMessage = updatedCount > 0
+                ? "已将 \(updatedCount) 个 API Key 的限额同步到 \(accountLabel) 网站"
+                : "没有需要同步的远端 API Key"
+        } catch {
+            eventMessage = "网站限额同步失败：App 中的本机值已保留，请检查凭据后重试"
+        }
     }
 
     func copyAPIKey(_ record: APIKeyRecord) {
@@ -910,8 +1154,21 @@ final class ConsoleModel: ObservableObject {
                 for (id, secret) in loaded { self.secrets[id] = secret }
                 self.secretsLoaded = true
                 self.refreshRuntime()
+                self.scheduleInitialAPIKeySync()
                 if self.settings.autoSync { self.startSync() }
             }
+        }
+    }
+
+    private func scheduleInitialAPIKeySync() {
+        guard !initialAPIKeySyncScheduled else { return }
+        initialAPIKeySyncScheduled = true
+        let accountIDs = accounts.compactMap { profile -> UUID? in
+            guard hasCredentials(for: profile.id), secrets[profile.id]?.apiKeys.isEmpty != false else { return nil }
+            return profile.id
+        }
+        for accountID in accountIDs {
+            syncRemoteAPIKeys(for: accountID, announce: false)
         }
     }
 
@@ -931,7 +1188,20 @@ final class ConsoleModel: ObservableObject {
         let workURL = projectURL.appendingPathComponent("work")
         try FileManager.default.createDirectory(at: workURL, withIntermediateDirectories: true)
         let envURL = workURL.appendingPathComponent("app-sync.env")
-        let runtimeAccounts = enabledAccounts.enumerated().map { index, profile in
+        let runtimeAccounts = makeRuntimeAccounts(includeDisabled: false)
+        let json = try String(decoding: JSONEncoder().encode(runtimeAccounts), as: UTF8.self)
+        var lines = ["export FOROPENCODE_ACCOUNTS_JSON=\(shellQuote(json))"]
+        if !settings.proxy.isEmpty { lines.append("export FOROPENCODE_PROXY=\(shellQuote(settings.proxy))") }
+        if !settings.sshKeyPath.isEmpty { lines.append("export SYNC_GIT_SSH_KEY_PATH=\(shellQuote(settings.sshKeyPath))") }
+        lines.append("export SYNC_INTERVAL_SECONDS=\(max(60, settings.intervalMinutes * 60))")
+        try lines.joined(separator: "\n").appending("\n").write(to: envURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: envURL.path)
+        return envURL
+    }
+
+    private func makeRuntimeAccounts(includeDisabled: Bool) -> [RuntimeAccount] {
+        let profiles = includeDisabled ? accounts : enabledAccounts
+        return profiles.enumerated().map { index, profile in
             let secret = secrets[profile.id] ?? AccountSecret()
             return RuntimeAccount(
                 id: "account-\(index + 1)",
@@ -951,14 +1221,6 @@ final class ConsoleModel: ObservableObject {
                 )
             )
         }
-        let json = try String(decoding: JSONEncoder().encode(runtimeAccounts), as: UTF8.self)
-        var lines = ["export FOROPENCODE_ACCOUNTS_JSON=\(shellQuote(json))"]
-        if !settings.proxy.isEmpty { lines.append("export FOROPENCODE_PROXY=\(shellQuote(settings.proxy))") }
-        if !settings.sshKeyPath.isEmpty { lines.append("export SYNC_GIT_SSH_KEY_PATH=\(shellQuote(settings.sshKeyPath))") }
-        lines.append("export SYNC_INTERVAL_SECONDS=\(max(60, settings.intervalMinutes * 60))")
-        try lines.joined(separator: "\n").appending("\n").write(to: envURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: envURL.path)
-        return envURL
     }
 
     private func processEnvironment(using envURL: URL) -> [String: String] {
@@ -966,6 +1228,91 @@ final class ConsoleModel: ObservableObject {
         environment["SYNC_ENV_FILE"] = envURL.path
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         return environment
+    }
+
+    private func accountProfile(for id: UUID) throws -> AccountProfile {
+        guard let profile = accounts.first(where: { $0.id == id }) else {
+            throw APIKeyCommandError.invalidResponse
+        }
+        return profile
+    }
+
+    private func runtimeAccountIdentifier(for profile: AccountProfile) throws -> String {
+        guard let index = accounts.firstIndex(where: { $0.id == profile.id }) else {
+            throw APIKeyCommandError.invalidResponse
+        }
+        return "account-\(index + 1)"
+    }
+
+    private func apiKeyProcessEnvironment() throws -> [String: String] {
+        let json = try String(
+            decoding: JSONEncoder().encode(makeRuntimeAccounts(includeDisabled: true)),
+            as: UTF8.self
+        )
+        var environment = ProcessInfo.processInfo.environment
+        environment["FOROPENCODE_ACCOUNTS_JSON"] = json
+        if settings.proxy.isEmpty {
+            environment.removeValue(forKey: "FOROPENCODE_PROXY")
+        } else {
+            environment["FOROPENCODE_PROXY"] = settings.proxy
+        }
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        return environment
+    }
+
+    private func nodeExecutableURL() -> URL? {
+        let candidates = [
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+            "/usr/bin/node"
+        ]
+        return candidates
+            .map(URL.init(fileURLWithPath:))
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) })
+    }
+
+    private func runAPIKeyCommand(_ arguments: [String], input: Data? = nil) async throws -> Data {
+        guard let nodeURL = nodeExecutableURL() else { throw APIKeyCommandError.missingNode }
+        let scriptURL = projectURL.appendingPathComponent("scripts/manage-api-keys.mjs")
+        guard FileManager.default.isReadableFile(atPath: scriptURL.path) else {
+            throw APIKeyCommandError.processFailed
+        }
+
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        let inputPipe = input == nil ? nil : Pipe()
+        process.executableURL = nodeURL
+        process.arguments = [scriptURL.path] + arguments
+        process.currentDirectoryURL = projectURL
+        process.environment = try apiKeyProcessEnvironment()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        if let inputPipe { process.standardInput = inputPipe }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            process.terminationHandler = { process in
+                let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let error = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                if process.terminationStatus == 0 {
+                    continuation.resume(returning: output)
+                } else {
+                    // Keep command errors out of the event log; the CLI already redacts secrets.
+                    _ = error
+                    continuation.resume(throwing: APIKeyCommandError.processFailed)
+                }
+            }
+
+            do {
+                try process.run()
+                if let input, let inputPipe {
+                    inputPipe.fileHandleForWriting.write(input)
+                    inputPipe.fileHandleForWriting.closeFile()
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
     }
 
     private func removeRuntimeEnvironment() {

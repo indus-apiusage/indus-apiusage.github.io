@@ -466,6 +466,81 @@ export class ForApiClient {
     return this.requestJson("/api/user/self/groups");
   }
 
+  async fetchAPIKeysPage({ page = 1, pageSize = 100 } = {}) {
+    const query = new URLSearchParams({
+      p: String(page),
+      size: String(pageSize),
+    });
+
+    return this.requestJson(`/api/token/?${query.toString()}`);
+  }
+
+  async fetchAllAPIKeys({ pageSize = 100 } = {}) {
+    const firstResponse = await this.fetchAPIKeysPage({ page: 1, pageSize });
+
+    if (!firstResponse?.success) {
+      throw new Error(firstResponse?.message || "API key request failed on page 1.");
+    }
+
+    const firstPageItems = Array.isArray(firstResponse?.data?.items)
+      ? firstResponse.data.items
+      : [];
+    const total = toNumber(firstResponse?.data?.total, firstPageItems.length);
+    const pageCount = Math.ceil(total / pageSize);
+
+    if (firstPageItems.length === 0 || pageCount <= 1) {
+      return firstPageItems;
+    }
+
+    const remainingPages = Array.from({ length: pageCount - 1 }, (_, index) => index + 2);
+    const remainingItems = await mapWithConcurrency(remainingPages, 3, async (page) => {
+      const response = await this.fetchAPIKeysPage({ page, pageSize });
+
+      if (!response?.success) {
+        throw new Error(response?.message || `API key request failed on page ${page}.`);
+      }
+
+      return Array.isArray(response?.data?.items) ? response.data.items : [];
+    });
+
+    return [...firstPageItems, ...remainingItems.flat()].slice(0, total);
+  }
+
+  async revealAPIKey(id) {
+    return this.requestJson(`/api/token/${encodeURIComponent(id)}/key`, { method: "POST" });
+  }
+
+  async revealAPIKeys(ids) {
+    const normalizedIds = [...new Set(
+      ids
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id)),
+    )];
+    if (normalizedIds.length === 0) {
+      return {};
+    }
+
+    const response = await this.requestJson("/api/token/batch/keys", {
+      method: "POST",
+      body: { ids: normalizedIds },
+    });
+
+    if (!response?.success) {
+      throw new Error(response?.message || "API key reveal request failed.");
+    }
+
+    return response?.data?.keys && typeof response.data.keys === "object"
+      ? response.data.keys
+      : {};
+  }
+
+  async updateAPIKey(payload) {
+    return this.requestJson("/api/token/", {
+      method: "PUT",
+      body: payload,
+    });
+  }
+
   async login() {
     if (this.loginPromise) {
       return this.loginPromise;
