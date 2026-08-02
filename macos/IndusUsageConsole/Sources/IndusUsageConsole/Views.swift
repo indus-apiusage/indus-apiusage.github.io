@@ -1380,11 +1380,11 @@ struct AccountEditorView: View {
                                     .editorTextField()
                             }
                         }
-                        EditorField(title: "AUTHORIZATION", hint: "可粘贴完整 Bearer 或只粘贴 Token") {
+                        EditorField(title: "AUTHORIZATION", hint: "Cookie 失效后的备用 Token") {
                             SecureField("Bearer Token", text: $draft.secret.authorization)
                                 .editorTextField()
                         }
-                        EditorField(title: "COOKIE", hint: "从浏览器请求头复制 cookie 全字段") {
+                        EditorField(title: "COOKIE", hint: "优先使用：从浏览器请求头复制 cookie 全字段") {
                             ZStack(alignment: .topLeading) {
                                 TextEditor(text: $draft.secret.cookie)
                                     .font(.system(size: 11, design: .monospaced))
@@ -1405,11 +1405,11 @@ struct AccountEditorView: View {
                             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
                         }
                         HStack(spacing: 14) {
-                            EditorField(title: "USERNAME", hint: "可选：让脚本登录") {
+                            EditorField(title: "USERNAME", hint: "Cookie 失效后的备用登录") {
                                 TextField("可选", text: $draft.secret.username)
                                     .editorTextField()
                             }
-                            EditorField(title: "PASSWORD", hint: "可选，保存到 Keychain") {
+                            EditorField(title: "PASSWORD", hint: "Cookie 失效后的备用密码") {
                                 SecureField("可选", text: $draft.secret.password)
                                     .editorTextField()
                             }

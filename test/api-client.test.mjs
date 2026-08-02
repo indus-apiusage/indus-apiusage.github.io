@@ -50,3 +50,22 @@ test("ForApiClient reads, reveals, and updates API keys through New API endpoint
     },
   });
 });
+
+test("ForApiClient prefers an existing cookie over password login", async () => {
+  const client = new ForApiClient({
+    baseUrl: "http://example.test",
+    auth: {
+      cookie: "session=browser-session",
+      username: "JunhaoCai",
+      password: "password",
+    },
+  });
+
+  let loginCalled = false;
+  client.login = async () => {
+    loginCalled = true;
+  };
+
+  await client.ensureAuthenticated();
+  assert.equal(loginCalled, false);
+});

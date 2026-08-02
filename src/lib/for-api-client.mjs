@@ -550,8 +550,8 @@ export class ForApiClient {
       return this.loginPromise;
     }
 
-    const hasPasswordCredentials = Boolean(this.auth.username && this.auth.password);
-    if (this.hasLoggedIn || (!hasPasswordCredentials && (this.cookies.size > 0 || this.authorization))) {
+    const hasSessionCredentials = this.cookies.size > 0 || Boolean(this.authorization);
+    if (this.hasLoggedIn || hasSessionCredentials) {
       return;
     }
 
@@ -610,12 +610,14 @@ export class ForApiClient {
   }
 
   async ensureAuthenticated() {
-    if (this.auth.username && this.auth.password) {
-      await this.login();
+    // Prefer a browser session or access token. Password login is only a
+    // recovery path after the existing session has expired or been rejected.
+    if (this.cookies.size > 0 || this.authorization) {
       return;
     }
 
-    if (this.cookies.size > 0 || this.authorization) {
+    if (this.auth.username && this.auth.password) {
+      await this.login();
       return;
     }
 

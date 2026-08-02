@@ -1228,11 +1228,9 @@ final class ConsoleModel: ObservableObject {
                 scope: "self",
                 auth: RuntimeAuth(
                     cookie: secret.cookie,
-                    // A password login must not be shadowed by an old Bearer token
-                    // that may still be present in the Keychain record.
-                    authorization: secret.username.isEmpty || secret.password.isEmpty
-                        ? secret.authorization
-                        : "",
+                    // Existing browser credentials take precedence. Password login
+                    // remains available as a recovery path after a 401 response.
+                    authorization: secret.authorization,
                     userId: profile.userID,
                     username: secret.username,
                     password: secret.password
