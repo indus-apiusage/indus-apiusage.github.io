@@ -448,7 +448,11 @@ export class ForApiClient {
     }
 
     if (status < 200 || status >= 300) {
-      throw new Error(`Request to ${path} failed: ${json?.message || `HTTP ${status}`}`);
+      const errorDetail = [json?.code, json?.message]
+        .filter((value) => value !== undefined && value !== null && String(value).trim())
+        .map(String)
+        .join(": ") || `HTTP ${status}`;
+      throw new Error(`Request to ${path} failed: ${errorDetail}`);
     }
 
     return json;

@@ -297,13 +297,14 @@ private struct APIKeyUpdateResponse: Decodable {
 private enum APIKeyCommandError: LocalizedError {
     case invalidResponse
     case missingNode
-    case processFailed
+    case processFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "网站返回了无法识别的 API Key 响应"
         case .missingNode: return "找不到 Node.js 运行时"
-        case .processFailed: return "API Key 管理命令执行失败"
+        case .processFailed(let detail):
+            return detail.isEmpty ? "API Key 管理命令执行失败" : "API Key 管理命令执行失败：\(detail)"
         }
     }
 }
@@ -745,7 +746,10 @@ final class ConsoleModel: ObservableObject {
                 self.eventMessage = "已从网站同步 \(importedKeys.count) 个 API Key，远端限额已载入"
             } catch {
                 if announce {
-                    self.eventMessage = "网站 API Key 同步失败：请检查登录凭据、用户 ID 和网络设置"
+                    self.eventMessage = self.apiKeySyncFailureMessage(
+                        error,
+                        fallback: "网站 API Key 同步失败：请检查登录凭据、用户 ID 和网络设置"
+                    )
                 }
             }
         }
@@ -810,8 +814,22 @@ final class ConsoleModel: ObservableObject {
                 ? "已将 \(updatedCount) 个 API Key 的限额同步到 \(accountLabel) 网站"
                 : "没有需要同步的远端 API Key"
         } catch {
-            eventMessage = "网站限额同步失败：App 中的本机值已保留，请检查凭据后重试"
+            eventMessage = apiKeySyncFailureMessage(
+                error,
+                fallback: "网站限额同步失败：App 中的本机值已保留，请检查凭据后重试"
+            )
         }
+    }
+
+    private func apiKeySyncFailureMessage(_ error: Error, fallback: String) -> String {
+        let detail = error.localizedDescription
+        if detail.contains("AUTH_SESSION_LIMIT") {
+            return "网站登录会话已达上限，请先在网页个人资料的登录会话中退出其他会话"
+        }
+        if detail.contains("Unauthorized") || detail.contains("401") {
+            return "网站认证已失效，请更新 Cookie、Bearer Token，或确认账号密码"
+        }
+        return fallback
     }
 
     func copyAPIKey(_ record: APIKeyRecord) {
@@ -1275,7 +1293,7 @@ final class ConsoleModel: ObservableObject {
         guard let nodeURL = nodeExecutableURL() else { throw APIKeyCommandError.missingNode }
         let scriptURL = projectURL.appendingPathComponent("scripts/manage-api-keys.mjs")
         guard FileManager.default.isReadableFile(atPath: scriptURL.path) else {
-            throw APIKeyCommandError.processFailed
+            throw APIKeyCommandError.processFailed("找不到 API Key 管理脚本")
         }
 
         let process = Process()
@@ -1297,9 +1315,10 @@ final class ConsoleModel: ObservableObject {
                 if process.terminationStatus == 0 {
                     continuation.resume(returning: output)
                 } else {
-                    // Keep command errors out of the event log; the CLI already redacts secrets.
-                    _ = error
-                    continuation.resume(throwing: APIKeyCommandError.processFailed)
+                    // The CLI redacts secrets; retain safe server error codes for actionable UI messages.
+                    let detail = String(data: error, encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    continuation.resume(throwing: APIKeyCommandError.processFailed(detail))
                 }
             }
 
