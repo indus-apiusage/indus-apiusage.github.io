@@ -22,6 +22,7 @@
 		A10000000000000000000013 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* SwiftUI.framework */; };
 		A10000000000000000000014 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* WidgetKit.framework */; };
 		A10000000000000000000015 /* IndusUsageWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* IndusUsageWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000016 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* AppIcon.icns */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 		B10000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000007 /* IndusUsageConsole.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IndusUsageConsole.entitlements; sourceTree = "<group>"; };
 		B10000000000000000000008 /* IndusUsageWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IndusUsageWidget.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000009 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		B10000000000000000000010 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		B10000000000000000000011 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		B10000000000000000000012 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -99,6 +101,7 @@
 			children = (
 				G10000000000000000000002 /* Sources/IndusUsageConsole */,
 				G10000000000000000000003 /* ../IndusUsageWidget */,
+				G10000000000000000000006 /* Resources */,
 				G10000000000000000000004 /* Frameworks */,
 				G10000000000000000000005 /* Products */,
 			);
@@ -146,6 +149,14 @@
 				B10000000000000000000021 /* IndusUsageWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000006 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000009 /* AppIcon.icns */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -230,6 +241,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000016 /* AppIcon.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
