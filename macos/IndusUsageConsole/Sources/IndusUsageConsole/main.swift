@@ -676,9 +676,10 @@ final class ConsoleModel: ObservableObject {
 
     init() {
         loadState()
-        // Runtime state does not need a frame-rate poll. Five seconds keeps the
-        // console responsive while avoiding repeated disk reads and view updates.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        // Runtime state is deliberately low-frequency. The sync loop writes files
+        // asynchronously, so a 15-second probe is enough without waking SwiftUI
+        // during every idle interaction.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshRuntime() }
         }
         DispatchQueue.main.async { [weak self] in self?.refreshRuntime() }
@@ -1708,11 +1709,21 @@ final class ConsoleModel: ObservableObject {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let modificationDate = attributes[.modificationDate] as? Date,
               modificationDate != previousDate,
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+              let text = readLogTail(at: url) else { return nil }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
             .suffix(90)
             .map(String.init)
         return LogRefreshResult(modificationDate: modificationDate, lines: lines)
+    }
+
+    nonisolated private static func readLogTail(at url: URL, maxBytes: UInt64 = 96 * 1024) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        let fileSize = handle.seekToEndOfFile()
+        let offset = fileSize > maxBytes ? fileSize - maxBytes : 0
+        handle.seek(toFileOffset: offset)
+        let data = handle.readDataToEndOfFile()
+        handle.closeFile()
+        return String(data: data, encoding: .utf8)
     }
 
     nonisolated private static func readSnapshot(at url: URL, previousDate: Date?) -> SnapshotRefreshResult? {

@@ -3,15 +3,16 @@ import SwiftUI
 import WebKit
 
 private enum ConsolePalette {
-    static let ink = Color(hex: 0x1B2437)
-    static let muted = Color(hex: 0x65738A)
-    static let soft = Color(hex: 0x8B99AD)
-    static let line = Color(hex: 0xD7E0EC)
-    static let canvas = Color(hex: 0xF3F6FB)
-    static let cyan = Color(hex: 0x467FA7)
-    static let blue = Color(hex: 0x596AAE)
-    static let pink = Color(hex: 0xE58AAF)
-    static let mint = Color(hex: 0x4DAF8A)
+    static let ink = Color(hex: 0x172238)
+    static let muted = Color(hex: 0x5E6D83)
+    static let soft = Color(hex: 0x8998AE)
+    static let line = Color(hex: 0xD2DCE9)
+    static let canvas = Color(hex: 0xEEF2F8)
+    static let cyan = Color(hex: 0x3F789B)
+    static let blue = Color(hex: 0x5B6DB0)
+    static let pink = Color(hex: 0xD986A8)
+    static let mint = Color(hex: 0x4BA889)
+    static let chrome = Color(hex: 0xB7C5D7)
 }
 
 struct ConsoleRootView: View {
@@ -360,15 +361,18 @@ struct RechargeWebView: NSViewRepresentable {
         private let onCookiesCaptured: ([HTTPCookie]) -> Void
         private weak var webView: WKWebView?
         private var cookieTimer: Timer?
+        private var cookieCaptureInFlight = false
+        private var lastCookieSignature: Int?
 
         init(onCookiesCaptured: @escaping ([HTTPCookie]) -> Void) {
             self.onCookiesCaptured = onCookiesCaptured
         }
 
         func attach(to webView: WKWebView) {
+            cookieTimer?.invalidate()
             self.webView = webView
             captureCookies()
-            cookieTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            cookieTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
                 self?.captureCookies()
             }
         }
@@ -377,6 +381,8 @@ struct RechargeWebView: NSViewRepresentable {
             cookieTimer?.invalidate()
             cookieTimer = nil
             webView = nil
+            cookieCaptureInFlight = false
+            lastCookieSignature = nil
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
@@ -384,10 +390,21 @@ struct RechargeWebView: NSViewRepresentable {
         }
 
         private func captureCookies() {
-            guard let webView else { return }
+            guard let webView, !cookieCaptureInFlight else { return }
+            cookieCaptureInFlight = true
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
                 guard let self else { return }
+                var hasher = Hasher()
+                for cookie in cookies.sorted(by: { $0.name < $1.name }) {
+                    hasher.combine(cookie.name)
+                    hasher.combine(cookie.value)
+                    hasher.combine(cookie.domain)
+                }
+                let signature = hasher.finalize()
                 DispatchQueue.main.async {
+                    self.cookieCaptureInFlight = false
+                    guard self.lastCookieSignature != signature else { return }
+                    self.lastCookieSignature = signature
                     self.onCookiesCaptured(cookies)
                 }
             }
@@ -447,7 +464,21 @@ struct SidebarView: View {
             .padding(.bottom, 22)
         }
         .frame(width: 244)
-        .background(Color.white.opacity(0.72))
+        .background(
+            LinearGradient(
+                colors: [Color.white.opacity(0.90), Color.white.opacity(0.66)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(alignment: .trailing) {
+            LinearGradient(
+                colors: [Color.white.opacity(0.78), ConsolePalette.line.opacity(0.35), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(width: 1)
+        }
     }
 }
 
@@ -954,6 +985,21 @@ struct HeroCopy: View {
                 SignalChip(icon: "timer", value: "\(model.settings.intervalMinutes)m", label: "周期")
                 SignalChip(icon: "lock.shield.fill", value: "Keychain", label: "凭据")
             }
+
+            HStack(spacing: 18) {
+                HeroTelemetryReadout(
+                    label: "DATA WINDOW",
+                    value: model.snapshot?.latestDay?.shortDateText ?? "等待同步"
+                )
+                HeroTelemetryReadout(
+                    label: "BALANCE",
+                    value: model.snapshot.map {
+                        String(format: "¥%.2f", $0.accounts.reduce(0) { $0 + $1.remainingPrimaryBalance })
+                    } ?? "—"
+                )
+                HeroTelemetryReadout(label: "SIGNAL", value: model.phase.title)
+            }
+            .padding(.top, 2)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
@@ -1004,6 +1050,18 @@ struct HeroOrbitalDisplay: View {
                 .tracking(1)
                 .foregroundStyle(ConsolePalette.muted)
                 .offset(y: 48)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("NODE / 01")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(ConsolePalette.ink.opacity(0.72))
+                Text("LOCAL TELEMETRY")
+                    .font(.system(size: 7, weight: .medium, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(ConsolePalette.soft)
+            }
+            .offset(x: 84, y: -88)
         }
     }
 }
@@ -1029,6 +1087,26 @@ struct SignalChip: View {
         .padding(.vertical, 8)
         .background(Color.white.opacity(0.72), in: Capsule())
         .overlay(Capsule().stroke(ConsolePalette.line, lineWidth: 1))
+    }
+}
+
+struct HeroTelemetryReadout: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(ConsolePalette.soft)
+            Text(value)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(ConsolePalette.ink.opacity(0.78))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(minWidth: 76, alignment: .leading)
     }
 }
 
@@ -2135,6 +2213,17 @@ struct GlassCard<Content: View>: View {
                         lineWidth: 1
                     )
             }
+            .overlay(alignment: .top) {
+                LinearGradient(
+                    colors: [Color.white.opacity(0.82), Color.white.opacity(0.08), Color.clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(height: 1)
+                .padding(.horizontal, 24)
+                .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+            }
+            .shadow(color: ConsolePalette.ink.opacity(0.045), radius: 10, y: 5)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -2164,6 +2253,7 @@ struct LiquidBackdrop: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+            SignalGrid()
             Circle()
                 .fill(ConsolePalette.cyan.opacity(0.06))
                 .frame(width: 360, height: 360)
@@ -2174,6 +2264,36 @@ struct LiquidBackdrop: View {
                 .offset(x: 360, y: 280)
         }
         .ignoresSafeArea()
+    }
+}
+
+private struct SignalGrid: View {
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            let spacing: CGFloat = 52
+            var x: CGFloat = 0
+            while x <= size.width {
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+                x += spacing
+            }
+
+            var y: CGFloat = 0
+            while y <= size.height {
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                y += spacing
+            }
+
+            context.stroke(
+                path,
+                with: .color(ConsolePalette.chrome.opacity(0.18)),
+                lineWidth: 0.5
+            )
+        }
+        .opacity(0.72)
+        .allowsHitTesting(false)
     }
 }
 
