@@ -195,12 +195,12 @@ private struct LargeWidgetView: View {
     let payload: WidgetSnapshotPayload
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 WidgetHeader(status: payload.syncState, prominent: true)
                 Spacer()
                 Text(shortDate(payload.latestDate))
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(WidgetPalette.muted)
             }
 
@@ -211,7 +211,7 @@ private struct LargeWidgetView: View {
             }
 
             Text("账号轨道")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .tracking(1.5)
                 .foregroundStyle(WidgetPalette.muted)
 
@@ -229,7 +229,7 @@ private struct LargeWidgetView: View {
             }
 
             Text("Indus Usage Console · 数据由本机同步结果提供")
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(WidgetPalette.muted.opacity(0.85))
         }
         // Keep the content close to the outer safe area, like the native weather
@@ -246,10 +246,10 @@ private struct WidgetHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "waveform.path.ecg")
-                .font(.system(size: prominent ? 14 : 11, weight: .bold))
+                .font(.system(size: prominent ? 16 : 11, weight: .bold))
                 .foregroundStyle(WidgetPalette.blue)
             Text("INDUS API")
-                .font(.system(size: prominent ? 12 : 9, weight: .bold, design: .monospaced))
+                .font(.system(size: prominent ? 14 : 9, weight: .bold, design: .monospaced))
                 .tracking(prominent ? 1.4 : 1.1)
                 .foregroundStyle(WidgetPalette.ink)
             Spacer(minLength: 0)
@@ -308,19 +308,19 @@ private struct LargeMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(tint)
             Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(size: 25, weight: .bold, design: .rounded))
                 .foregroundStyle(WidgetPalette.ink)
                 .lineLimit(1)
-                .minimumScaleFactor(0.58)
+                .minimumScaleFactor(0.54)
             Text(detail)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(WidgetPalette.muted)
                 .lineLimit(1)
         }
-        .padding(12)
+        .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(tint.opacity(0.18), lineWidth: 1))
@@ -338,27 +338,27 @@ private struct AccountWidgetRow: View {
                 .frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.label)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(WidgetPalette.ink)
                     .lineLimit(1)
                 Text("\(money(account.usage, digits: 2)) 已用 · \(percent(account.utilization))")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(WidgetPalette.muted)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 3) {
                 Text(money(account.balance, digits: 2))
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundStyle(WidgetPalette.ink)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.65)
+                    .minimumScaleFactor(0.6)
                 Text("余额")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(WidgetPalette.muted)
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
         .padding(.horizontal, 14)
         .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
