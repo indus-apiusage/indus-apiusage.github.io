@@ -195,24 +195,24 @@ private struct LargeWidgetView: View {
     let payload: WidgetSnapshotPayload
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 15) {
             HStack {
-                WidgetHeader(status: payload.syncState)
+                WidgetHeader(status: payload.syncState, prominent: true)
                 Spacer()
                 Text(shortDate(payload.latestDate))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(WidgetPalette.muted)
             }
 
-            HStack(spacing: 9) {
+            HStack(spacing: 11) {
                 LargeMetric(label: "本月累计", value: money(payload.monthUsage, digits: 2), detail: "\(payload.monthRequests) 次请求", tint: WidgetPalette.blue)
                 LargeMetric(label: "今日用量", value: money(payload.todayUsage, digits: 2), detail: "\(payload.todayRequests) 次请求", tint: WidgetPalette.pink)
                 LargeMetric(label: "总余额", value: money(payload.totalBalance, digits: 2), detail: ratio(payload.gptPlusRatio) + " gpt_plus", tint: WidgetPalette.mint)
             }
 
             Text("账号轨道")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .tracking(1.3)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .tracking(1.5)
                 .foregroundStyle(WidgetPalette.muted)
 
             if payload.accounts.isEmpty {
@@ -229,29 +229,33 @@ private struct LargeWidgetView: View {
             }
 
             Text("Indus Usage Console · 数据由本机同步结果提供")
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(WidgetPalette.muted.opacity(0.85))
         }
-        .padding(16)
+        // Keep the content close to the outer safe area, like the native weather
+        // widget, while the larger type carries the visual weight.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 14)
     }
 }
 
 private struct WidgetHeader: View {
     let status: String
+    var prominent = false
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "waveform.path.ecg")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: prominent ? 14 : 11, weight: .bold))
                 .foregroundStyle(WidgetPalette.blue)
             Text("INDUS API")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .tracking(1.1)
+                .font(.system(size: prominent ? 12 : 9, weight: .bold, design: .monospaced))
+                .tracking(prominent ? 1.4 : 1.1)
                 .foregroundStyle(WidgetPalette.ink)
             Spacer(minLength: 0)
             Circle()
                 .fill(status == "同步中" ? WidgetPalette.pink : WidgetPalette.mint)
-                .frame(width: 6, height: 6)
+                .frame(width: prominent ? 8 : 6, height: prominent ? 8 : 6)
         }
     }
 }
@@ -304,19 +308,19 @@ private struct LargeMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(tint)
             Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(WidgetPalette.ink)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.58)
             Text(detail)
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(WidgetPalette.muted)
                 .lineLimit(1)
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(tint.opacity(0.18), lineWidth: 1))
@@ -334,28 +338,28 @@ private struct AccountWidgetRow: View {
                 .frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.label)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(WidgetPalette.ink)
                     .lineLimit(1)
                 Text("\(money(account.usage, digits: 2)) 已用 · \(percent(account.utilization))")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(WidgetPalette.muted)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 3) {
                 Text(money(account.balance, digits: 2))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(WidgetPalette.ink)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.65)
                 Text("余额")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(WidgetPalette.muted)
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
         .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 }
