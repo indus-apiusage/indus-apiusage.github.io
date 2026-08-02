@@ -23,6 +23,7 @@ struct IndusUsageConsoleApp: App {
 enum ConsoleSection: String, CaseIterable, Identifiable {
     case overview
     case accounts
+    case keys
     case sync
     case settings
 
@@ -32,6 +33,7 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "总览"
         case .accounts: return "账号矩阵"
+        case .keys: return "API 密钥"
         case .sync: return "同步中枢"
         case .settings: return "控制设置"
         }
@@ -41,6 +43,7 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "MISSION CONTROL"
         case .accounts: return "IDENTITY VAULT"
+        case .keys: return "KEY VAULT"
         case .sync: return "SIGNAL ROUTER"
         case .settings: return "SYSTEM CALIBRATION"
         }
@@ -50,6 +53,7 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "circle.hexagongrid.fill"
         case .accounts: return "person.2.crop.square.stack.fill"
+        case .keys: return "key.fill"
         case .sync: return "waveform.path.ecg.rectangle.fill"
         case .settings: return "slider.horizontal.3"
         }
@@ -66,11 +70,101 @@ struct AccountProfile: Codable, Identifiable, Equatable {
     var colorIndex: Int = 0
 }
 
+struct StoredAPIKey: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var name: String = "未命名密钥"
+    var value: String = ""
+    var quotaLimit: Double?
+    var unlimitedQuota: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case value
+        case quotaLimit
+        case unlimitedQuota
+    }
+
+    init(
+        id: UUID = UUID(),
+        name: String = "未命名密钥",
+        value: String = "",
+        quotaLimit: Double? = nil,
+        unlimitedQuota: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.value = value
+        self.quotaLimit = quotaLimit
+        self.unlimitedQuota = unlimitedQuota
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "未命名密钥"
+        value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
+        quotaLimit = try container.decodeIfPresent(Double.self, forKey: .quotaLimit)
+        unlimitedQuota = try container.decodeIfPresent(Bool.self, forKey: .unlimitedQuota) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(value, forKey: .value)
+        try container.encodeIfPresent(quotaLimit, forKey: .quotaLimit)
+        try container.encode(unlimitedQuota, forKey: .unlimitedQuota)
+    }
+}
+
 struct AccountSecret: Codable, Equatable {
     var authorization: String = ""
     var cookie: String = ""
     var username: String = ""
     var password: String = ""
+    var apiKeys: [StoredAPIKey] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case authorization
+        case cookie
+        case username
+        case password
+        case apiKeys
+    }
+
+    init(
+        authorization: String = "",
+        cookie: String = "",
+        username: String = "",
+        password: String = "",
+        apiKeys: [StoredAPIKey] = []
+    ) {
+        self.authorization = authorization
+        self.cookie = cookie
+        self.username = username
+        self.password = password
+        self.apiKeys = apiKeys
+    }
+
+    // Keep existing Keychain records readable after adding the API key vault.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        authorization = try container.decodeIfPresent(String.self, forKey: .authorization) ?? ""
+        cookie = try container.decodeIfPresent(String.self, forKey: .cookie) ?? ""
+        username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+        password = try container.decodeIfPresent(String.self, forKey: .password) ?? ""
+        apiKeys = try container.decodeIfPresent([StoredAPIKey].self, forKey: .apiKeys) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(authorization, forKey: .authorization)
+        try container.encode(cookie, forKey: .cookie)
+        try container.encode(username, forKey: .username)
+        try container.encode(password, forKey: .password)
+        try container.encode(apiKeys, forKey: .apiKeys)
+    }
 }
 
 struct AccountDraft: Identifiable {
@@ -80,6 +174,25 @@ struct AccountDraft: Identifiable {
 
     static var new: AccountDraft {
         AccountDraft(profile: AccountProfile(), secret: AccountSecret())
+    }
+}
+
+struct APIKeyRecord: Identifiable {
+    let accountID: UUID
+    let accountLabel: String
+    let baseURL: String
+    let key: StoredAPIKey
+
+    var id: String { "\(accountID.uuidString)-\(key.id.uuidString)" }
+    var displayName: String { key.name.isEmpty ? "未命名密钥" : key.name }
+    var statusText: String {
+        if key.value.isEmpty { return "未设置值" }
+        return "已安全保存 · \(quotaText)"
+    }
+    var quotaText: String {
+        if key.unlimitedQuota { return "无限额度" }
+        guard let quotaLimit = key.quotaLimit else { return "未设置限额" }
+        return String(format: "限额 %.2f", quotaLimit)
     }
 }
 
@@ -341,6 +454,18 @@ final class ConsoleModel: ObservableObject {
 
     var enabledAccounts: [AccountProfile] { accounts.filter(\.enabled) }
     var isLoopRunning: Bool { loopProcess?.isRunning == true || existingLoopPID != nil }
+    var apiKeyRecords: [APIKeyRecord] {
+        accounts.flatMap { profile in
+            (secrets[profile.id]?.apiKeys ?? []).map { key in
+                APIKeyRecord(
+                    accountID: profile.id,
+                    accountLabel: profile.label.isEmpty ? profile.name : profile.label,
+                    baseURL: profile.baseURL,
+                    key: key
+                )
+            }
+        }
+    }
     var existingLoopPID: Int32? {
         let url = projectURL.appendingPathComponent("work/sync-loop.pid")
         guard let raw = try? String(contentsOf: url, encoding: .utf8),
@@ -386,10 +511,33 @@ final class ConsoleModel: ObservableObject {
         editingDraft = AccountDraft(profile: profile, secret: secrets[profile.id] ?? AccountSecret())
     }
 
+    func edit(accountID: UUID) {
+        guard let profile = accounts.first(where: { $0.id == accountID }) else {
+            eventMessage = "找不到对应账号"
+            return
+        }
+        edit(profile)
+    }
+
     func save(_ draft: AccountDraft) {
+        var sanitizedSecret = draft.secret
+        sanitizedSecret.apiKeys = draft.secret.apiKeys.compactMap { key in
+            let value = key.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { return nil }
+            let name = key.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let quotaLimit = key.quotaLimit.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            return StoredAPIKey(
+                id: key.id,
+                name: name.isEmpty ? "未命名密钥" : name,
+                value: value,
+                quotaLimit: quotaLimit,
+                unlimitedQuota: key.unlimitedQuota
+            )
+        }
+
         do {
-            try vault.save(draft.secret, for: draft.profile.id)
-            secrets[draft.profile.id] = draft.secret
+            try vault.save(sanitizedSecret, for: draft.profile.id)
+            secrets[draft.profile.id] = sanitizedSecret
             if let index = accounts.firstIndex(where: { $0.id == draft.profile.id }) {
                 accounts[index] = draft.profile
             } else {
@@ -397,7 +545,7 @@ final class ConsoleModel: ObservableObject {
             }
             persistState()
             editingDraft = nil
-            eventMessage = "已将 \(draft.profile.label) 接入凭据舱"
+            eventMessage = "已将 \(draft.profile.label) 接入凭据舱，保存 API Key \(sanitizedSecret.apiKeys.count) 个"
         } catch {
             eventMessage = "Keychain 保存失败：\(error.localizedDescription)"
         }
@@ -416,6 +564,63 @@ final class ConsoleModel: ObservableObject {
         accounts[index].enabled = enabled
         persistState()
         eventMessage = enabled ? "已启用该账号同步" : "已暂停该账号同步"
+    }
+
+    func apiKeyCount(for id: UUID) -> Int {
+        secrets[id]?.apiKeys.count ?? 0
+    }
+
+    func copyAPIKey(_ record: APIKeyRecord) {
+        guard let key = secrets[record.accountID]?.apiKeys.first(where: { $0.id == record.key.id }),
+              !key.value.isEmpty else {
+            eventMessage = "这个 API Key 还没有保存完整值"
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString(key.value, forType: .string) else {
+            eventMessage = "复制 API Key 失败"
+            return
+        }
+        eventMessage = "已复制 \(record.displayName) 到剪贴板"
+    }
+
+    func openTopUp(for accountID: UUID) {
+        guard let profile = accounts.first(where: { $0.id == accountID }) else {
+            eventMessage = "找不到对应账号"
+            return
+        }
+        openTopUp(for: profile)
+    }
+
+    func openTopUp(for profile: AccountProfile) {
+        guard let url = websiteURL(for: profile, path: "/wallet/") else {
+            eventMessage = "账号地址无效，无法打开充值页面"
+            return
+        }
+        NSWorkspace.shared.open(url)
+        eventMessage = "已打开 \(profile.label) 的充值页面"
+    }
+
+    func openKeyManager(for accountID: UUID) {
+        guard let profile = accounts.first(where: { $0.id == accountID }) else {
+            eventMessage = "找不到对应账号"
+            return
+        }
+        guard let url = websiteURL(for: profile, path: "/keys/") else {
+            eventMessage = "账号地址无效，无法打开密钥管理"
+            return
+        }
+        NSWorkspace.shared.open(url)
+        eventMessage = "已打开 \(profile.label) 的网页密钥管理"
+    }
+
+    private func websiteURL(for profile: AccountProfile, path: String) -> URL? {
+        var base = profile.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.isEmpty { base = "https://www.foropencode.com" }
+        while base.hasSuffix("/") { base.removeLast() }
+        return URL(string: base + path)
     }
 
     func setAutoSync(_ enabled: Bool) {

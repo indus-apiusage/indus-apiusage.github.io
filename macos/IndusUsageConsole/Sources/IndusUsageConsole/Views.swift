@@ -32,6 +32,7 @@ struct ConsoleRootView: View {
                                 switch model.section {
                                 case .overview: OverviewView(model: model)
                                 case .accounts: AccountsView(model: model)
+                                case .keys: APIKeyVaultView(model: model)
                                 case .sync: SyncCenterView(model: model)
                                 case .settings: SettingsView(model: model)
                                 }
@@ -668,6 +669,15 @@ struct AccountRow: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .scaleEffect(0.78)
+            Button {
+                model.openTopUp(for: profile)
+            } label: {
+                Image(systemName: "arrow.up.right.circle")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0xF28CB6))
+            }
+            .buttonStyle(.plain)
+            .help("打开充值页面")
             Button { model.edit(profile) } label: {
                 Image(systemName: "slider.horizontal.2.square")
                     .font(.system(size: 13, weight: .semibold))
@@ -815,13 +825,144 @@ struct AccountsView: View {
                 Text("安全说明")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(ConsolePalette.ink)
-                Text("App 不会把 Bearer Token、Cookie 或密码写入 Git。同步时仅在本机 work 目录生成权限为 600 的临时环境文件，并由现有 Node 同步脚本读取。")
+                Text("App 不会把 Bearer Token、Cookie、密码或 API Key 写入 Git。同步时仅在本机 work 目录生成权限为 600 的临时环境文件，并由现有 Node 同步脚本读取。")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(ConsolePalette.muted)
                     .lineSpacing(5)
                     .padding(.top, 8)
             }
         }
+    }
+}
+
+struct APIKeyVaultView: View {
+    @ObservedObject var model: ConsoleModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            GlassCard {
+                PanelHeader(eyebrow: "KEY VAULT", title: "API 密钥", detail: "多个账号的密钥集中管理，完整值只保存在 macOS Keychain") {
+                    Button {
+                        model.section = .accounts
+                    } label: {
+                        Label("去账号矩阵添加", systemImage: "plus")
+                    }
+                    .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
+                }
+
+                if model.apiKeyRecords.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "key.slash")
+                            .font(.system(size: 28, weight: .light))
+                            .foregroundStyle(ConsolePalette.cyan)
+                        Text("还没有保存 API Key")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(ConsolePalette.ink)
+                        Text("进入账号矩阵编辑账号，粘贴完整密钥后即可在这里一键复制。")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(ConsolePalette.muted)
+                            .multilineTextAlignment(.center)
+                        HStack(spacing: 9) {
+                            Button("进入账号矩阵") {
+                                model.section = .accounts
+                            }
+                            .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan, filled: true))
+                            if let profile = model.accounts.first {
+                                Button("打开网页密钥管理") {
+                                    model.openKeyManager(for: profile.id)
+                                }
+                                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 42)
+                } else {
+                    LazyVStack(spacing: 10) {
+                        ForEach(model.apiKeyRecords) { record in
+                            APIKeyVaultRow(model: model, record: record)
+                        }
+                    }
+                    .padding(.top, 17)
+                }
+            }
+
+            GlassCard {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color(hex: 0x79E4B1))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("密钥安全边界")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(ConsolePalette.ink)
+                        Text("完整 API Key 只保存在 macOS Keychain。列表默认不显示密钥内容，复制时才会写入系统剪贴板；API Key 不会进入同步环境、Git 或运行日志。")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(ConsolePalette.muted)
+                            .lineSpacing(5)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct APIKeyVaultRow: View {
+    @ObservedObject var model: ConsoleModel
+    let record: APIKeyRecord
+
+    var body: some View {
+        HStack(spacing: 13) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ConsolePalette.cyan.opacity(0.12))
+                Image(systemName: "key.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(ConsolePalette.cyan)
+            }
+            .frame(width: 40, height: 40)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(record.displayName)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(ConsolePalette.ink)
+                    .lineLimit(1)
+                Text("\(record.accountLabel) · \(record.statusText)")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(ConsolePalette.muted)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 10)
+            Button {
+                model.copyAPIKey(record)
+            } label: {
+                Label("复制", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan, filled: true))
+            Button {
+                model.edit(accountID: record.accountID)
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
+            .help("调整 API Key 限额")
+            Button {
+                model.openKeyManager(for: record.accountID)
+            } label: {
+                Image(systemName: "safari")
+            }
+            .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
+            .help("打开网页密钥管理")
+            Button {
+                model.openTopUp(for: record.accountID)
+            } label: {
+                Label("充值", systemImage: "arrow.up.right")
+            }
+            .buttonStyle(GlassButtonStyle(tint: Color(hex: 0xF28CB6)))
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
     }
 }
 
@@ -840,6 +981,12 @@ struct AccountDetailCard: View {
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(ConsolePalette.ink)
                 Spacer()
+                Button {
+                    model.openTopUp(for: profile)
+                } label: {
+                    Label("充值", systemImage: "arrow.up.right")
+                }
+                .buttonStyle(GlassButtonStyle(tint: Color(hex: 0xF28CB6)))
                 Button { model.edit(profile) } label: {
                     Image(systemName: "ellipsis")
                         .foregroundStyle(ConsolePalette.muted)
@@ -856,8 +1003,10 @@ struct AccountDetailCard: View {
                     .foregroundStyle(ConsolePalette.muted)
             }
             Divider().overlay(ConsolePalette.line)
-            HStack {
+            HStack(spacing: 12) {
                 MetadataValue(title: "USER ID", value: profile.userID.isEmpty ? "—" : profile.userID)
+                Spacer()
+                MetadataValue(title: "API KEYS", value: "\(model.apiKeyCount(for: profile.id))")
                 Spacer()
                 MetadataValue(title: "AUTH", value: model.hasCredentials(for: profile.id) ? "KEYCHAIN" : "MISSING")
             }
@@ -1181,6 +1330,57 @@ struct AccountEditorView: View {
                                     .editorTextField()
                             }
                         }
+                        EditorField(title: "API KEYS", hint: "可添加多个，完整值只保存到 Keychain") {
+                            VStack(alignment: .leading, spacing: 9) {
+                                if draft.secret.apiKeys.isEmpty {
+                                    Text("尚未添加 API Key")
+                                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                                        .foregroundStyle(ConsolePalette.soft)
+                                }
+                                ForEach($draft.secret.apiKeys) { apiKey in
+                                    HStack(spacing: 8) {
+                                        TextField("名称", text: apiKey.name)
+                                            .editorTextField()
+                                            .frame(width: 150)
+                                        SecureField("sk-...", text: apiKey.value)
+                                            .editorTextField()
+                                        TextField("限额", text: Binding(
+                                            get: {
+                                                apiKey.wrappedValue.quotaLimit.map { String(format: "%.2f", $0) } ?? ""
+                                            },
+                                            set: { value in
+                                                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                                                apiKey.wrappedValue.quotaLimit = normalized.isEmpty ? nil : Double(normalized)
+                                            }
+                                        ))
+                                        .editorTextField()
+                                        .frame(width: 82)
+                                        Toggle("无限", isOn: Binding(
+                                            get: { apiKey.wrappedValue.unlimitedQuota },
+                                            set: { apiKey.wrappedValue.unlimitedQuota = $0 }
+                                        ))
+                                        .toggleStyle(.switch)
+                                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                                        .frame(width: 54)
+                                        Button {
+                                            let id = apiKey.wrappedValue.id
+                                            draft.secret.apiKeys.removeAll { $0.id == id }
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundStyle(ConsolePalette.soft)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("移除这条 API Key")
+                                    }
+                                }
+                                Button {
+                                    draft.secret.apiKeys.append(StoredAPIKey())
+                                } label: {
+                                    Label("添加 API Key", systemImage: "plus")
+                                }
+                                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
+                            }
+                        }
                         HStack {
                             Toggle("默认参与自动同步", isOn: $draft.profile.enabled)
                                 .toggleStyle(.switch)
@@ -1210,7 +1410,7 @@ struct AccountEditorView: View {
             }
             .padding(28)
         }
-        .frame(width: 670, height: 620)
+        .frame(width: 700, height: 720)
     }
 }
 
