@@ -50,6 +50,7 @@ struct IndusUsageWidget: Widget {
         .configurationDisplayName("Indus API 用量")
         .description("查看今日、本月累计、余额与账号状态")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
@@ -67,6 +68,12 @@ private enum WidgetPalette {
     static let pink = Color(red: 0.82, green: 0.42, blue: 0.62)
     static let mint = Color(red: 0.24, green: 0.62, blue: 0.52)
     static let paper = Color(red: 0.95, green: 0.97, blue: 0.99)
+}
+
+private enum WidgetLayout {
+    static let smallInset: CGFloat = 16
+    static let mediumInset: CGFloat = 20
+    static let largeInset: CGFloat = 26
 }
 
 private struct IndusUsageWidgetView: View {
@@ -147,7 +154,7 @@ private struct SmallWidgetView: View {
                 .foregroundStyle(WidgetPalette.muted)
                 .lineLimit(1)
         }
-        .padding(14)
+        .padding(WidgetLayout.smallInset)
     }
 }
 
@@ -187,7 +194,7 @@ private struct MediumWidgetView: View {
             }
             .frame(width: 112, alignment: .leading)
         }
-        .padding(16)
+        .padding(WidgetLayout.mediumInset)
     }
 }
 
@@ -232,10 +239,9 @@ private struct LargeWidgetView: View {
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(WidgetPalette.muted.opacity(0.85))
         }
-        // Keep the content close to the outer safe area, like the native weather
-        // widget, while the larger type carries the visual weight.
-        .padding(.horizontal, 12)
-        .padding(.vertical, 14)
+        // WidgetKit margins are disabled above so the large desktop widget owns
+        // one consistent visual inset on all four edges.
+        .padding(WidgetLayout.largeInset)
     }
 }
 
