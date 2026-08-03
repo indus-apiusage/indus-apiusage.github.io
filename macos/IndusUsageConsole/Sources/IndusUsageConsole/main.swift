@@ -963,10 +963,10 @@ final class ConsoleModel: ObservableObject {
     private func apiKeySyncFailureMessage(_ error: Error, fallback: String) -> String {
         let detail = error.localizedDescription
         if detail.contains("AUTH_SESSION_LIMIT") {
-            return "网站登录会话已达上限，请先在网页个人资料的登录会话中退出其他会话"
+            return "网站拒绝了新的密码登录（会话数量已达上限）。请更新 Cookie/Bearer Token，或在网页登录会话中退出其他会话后重试"
         }
         if detail.contains("Unauthorized") || detail.contains("401") {
-            return "网站认证已失效，请更新 Cookie、Bearer Token，或确认账号密码"
+            return "网站会话已失效，请更新 Cookie/Bearer Token 和 new-api-user；已有会话不会自动改用密码登录"
         }
         return fallback
     }
@@ -1556,15 +1556,21 @@ final class ConsoleModel: ObservableObject {
                 scope: "self",
                 auth: RuntimeAuth(
                     cookie: secret.cookie,
-                    // Existing browser credentials take precedence. Password login
-                    // remains available as a recovery path after a 401 response.
                     authorization: secret.authorization,
                     userId: profile.userID,
-                    username: secret.username,
-                    password: secret.password
+                    // A stored browser session is authoritative. Do not send
+                    // an old password alongside it, otherwise an expired
+                    // session could trigger an unwanted login fallback.
+                    username: hasSessionCredentials(secret) ? "" : secret.username,
+                    password: hasSessionCredentials(secret) ? "" : secret.password
                 )
             )
         }
+    }
+
+    private func hasSessionCredentials(_ secret: AccountSecret) -> Bool {
+        !secret.cookie.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !secret.authorization.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func processEnvironment(using envURL: URL) -> [String: String] {

@@ -152,9 +152,14 @@ export class ForApiClient {
     this.auth = auth;
     this.cookies = parseCookieString(auth.cookie);
     this.authorization = normalizeAuthorization(auth.authorization);
+    // A browser Cookie or Bearer token is an explicit session choice. Never
+    // replace it with a password login after the session expires: New API may
+    // reject that extra login when the account has reached its session limit.
+    this.hasInitialSessionCredentials = this.cookies.size > 0 || Boolean(this.authorization);
     this.hasLoggedIn = false;
     this.userId = String(auth.userId || "").trim();
     this.loginPromise = null;
+    this.passwordLoginAttempted = false;
   }
 
   get proxyUrl() {
@@ -317,6 +322,27 @@ export class ForApiClient {
     }
   }
 
+  canRetryWithPassword({ authRequired, retried }) {
+    return (
+      authRequired &&
+      !retried &&
+      !this.hasInitialSessionCredentials &&
+      !this.passwordLoginAttempted &&
+      Boolean(this.auth.username) &&
+      Boolean(this.auth.password)
+    );
+  }
+
+  authenticationError(path, message) {
+    if (this.hasInitialSessionCredentials) {
+      return new Error(
+        `Authentication failed for ${path}: ${message}. The supplied Cookie or Bearer session was rejected; password login was not attempted. Update the session credentials and New-Api-User value.`,
+      );
+    }
+
+    return new Error(`Authentication failed for ${path}: ${message}`);
+  }
+
   async requestJson(path, { method = "GET", body, authRequired = true, retried = false, attempt = 1, maxAttempts = 3 } = {}) {
     if (authRequired) {
       await this.ensureAuthenticated();
@@ -384,11 +410,7 @@ export class ForApiClient {
     }
 
     if (status >= 300 && status < 400) {
-      const canRetryWithCredentials =
-        authRequired &&
-        !retried &&
-        Boolean(this.auth.username) &&
-        Boolean(this.auth.password);
+      const canRetryWithCredentials = this.canRetryWithPassword({ authRequired, retried });
 
       if (canRetryWithCredentials) {
         this.cookies.clear();
@@ -405,7 +427,10 @@ export class ForApiClient {
         });
       }
 
-      throw new Error(`Unexpected redirect while requesting ${path}. A valid session cookie is probably required.`);
+      throw this.authenticationError(
+        path,
+        "Unexpected redirect. A valid session cookie is probably required",
+      );
     }
     let json;
 
@@ -417,11 +442,7 @@ export class ForApiClient {
 
     if (status === 401) {
       const message = json?.message || "Unauthorized";
-      const canRetryWithCredentials =
-        authRequired &&
-        !retried &&
-        Boolean(this.auth.username) &&
-        Boolean(this.auth.password);
+      const canRetryWithCredentials = this.canRetryWithPassword({ authRequired, retried });
 
       if (canRetryWithCredentials) {
         this.cookies.clear();
@@ -439,12 +460,16 @@ export class ForApiClient {
       }
 
       if (/New-Api-User header not provided/i.test(message)) {
+        if (this.hasInitialSessionCredentials) {
+          throw this.authenticationError(path, message);
+        }
+
         throw new Error(
           `Authentication failed for ${path}: ${message}. Set FOROPENCODE_USER_ID to the browser's localStorage uid or the request header value new-api-user.`,
         );
       }
 
-      throw new Error(`Authentication failed for ${path}: ${message}`);
+      throw this.authenticationError(path, message);
     }
 
     if (status < 200 || status >= 300) {
@@ -564,7 +589,14 @@ export class ForApiClient {
   }
 
   async performLogin() {
-    // Password login is the recovery path for expired or copied browser tokens.
+    if (this.hasInitialSessionCredentials) {
+      throw this.authenticationError(
+        "/api/user/login",
+        "The existing session credentials were rejected",
+      );
+    }
+
+    // Password login is only used for accounts configured without a session token.
     this.authorization = "";
 
     if (!this.auth.username || !this.auth.password) {
@@ -573,6 +605,7 @@ export class ForApiClient {
       );
     }
 
+    this.passwordLoginAttempted = true;
     const path = `/api/user/login?turnstile=${encodeURIComponent(this.auth.turnstileToken || "")}`;
     const response = await this.requestJson(path, {
       method: "POST",
@@ -610,8 +643,8 @@ export class ForApiClient {
   }
 
   async ensureAuthenticated() {
-    // Prefer a browser session or access token. Password login is only a
-    // recovery path after the existing session has expired or been rejected.
+    // Prefer a browser session or access token. Password login is only used
+    // when the account was configured without any session credentials.
     if (this.cookies.size > 0 || this.authorization) {
       return;
     }

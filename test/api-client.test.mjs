@@ -69,3 +69,61 @@ test("ForApiClient prefers an existing cookie over password login", async () => 
   await client.ensureAuthenticated();
   assert.equal(loginCalled, false);
 });
+
+test("ForApiClient does not replace an expired session with a password login", async () => {
+  const client = new ForApiClient({
+    baseUrl: "http://example.test",
+    auth: {
+      cookie: "session=expired-session",
+      authorization: "Bearer expired-token",
+      userId: "1143",
+      username: "JunhaoCai",
+      password: "password",
+    },
+  });
+
+  const originalFetch = globalThis.fetch;
+  const originalProxy = {
+    FOROPENCODE_PROXY: process.env.FOROPENCODE_PROXY,
+    HTTPS_PROXY: process.env.HTTPS_PROXY,
+    HTTP_PROXY: process.env.HTTP_PROXY,
+    ALL_PROXY: process.env.ALL_PROXY,
+  };
+  let loginCalls = 0;
+
+  process.env.FOROPENCODE_PROXY = "";
+  process.env.HTTPS_PROXY = "";
+  process.env.HTTP_PROXY = "";
+  process.env.ALL_PROXY = "";
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/api/user/login")) {
+      loginCalls += 1;
+    }
+
+    return {
+      status: 401,
+      headers: {
+        getSetCookie: () => [],
+        get: () => null,
+      },
+      text: async () => JSON.stringify({ message: "Unauthorized" }),
+    };
+  };
+
+  try {
+    await assert.rejects(
+      () => client.requestJson("/api/user/self"),
+      /password login was not attempted/,
+    );
+    assert.equal(loginCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalProxy)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+});
