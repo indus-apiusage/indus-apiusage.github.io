@@ -60,9 +60,26 @@ echo "$$" > "$PID_FILE"
 
 ACTIVE_CHILD_PID=""
 
+terminate_process_tree() {
+  local pid="$1" child_pid child_pids
+
+  # npm starts an intermediate shell before it reaches the Node crawler. Kill
+  # descendants first so an interrupted cycle cannot outlive its loop parent.
+  if command -v pgrep >/dev/null 2>&1; then
+    child_pids="$(pgrep -P "$pid" 2>/dev/null || true)"
+    for child_pid in $child_pids; do
+      terminate_process_tree "$child_pid"
+    done
+  fi
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+  fi
+}
+
 cleanup() {
   if [ -n "$ACTIVE_CHILD_PID" ] && kill -0 "$ACTIVE_CHILD_PID" 2>/dev/null; then
-    kill -TERM "$ACTIVE_CHILD_PID" 2>/dev/null || true
+    terminate_process_tree "$ACTIVE_CHILD_PID"
     wait "$ACTIVE_CHILD_PID" 2>/dev/null || true
   fi
 
