@@ -348,6 +348,71 @@ test("ForApiClient recognizes a JSON session-limit login response", async () => 
   }
 });
 
+test("ForApiClient keeps password bodies out of curl process arguments", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-curl-body-"));
+  const binDir = path.join(cwd, "bin");
+  const captureFile = path.join(cwd, "curl-args.txt");
+  const curlPath = path.join(binDir, "curl");
+  const originalEnv = {
+    FOROPENCODE_PROXY: process.env.FOROPENCODE_PROXY,
+    HTTPS_PROXY: process.env.HTTPS_PROXY,
+    HTTP_PROXY: process.env.HTTP_PROXY,
+    ALL_PROXY: process.env.ALL_PROXY,
+    PATH: process.env.PATH,
+    FOROPENCODE_CURL_TEST_CAPTURE: process.env.FOROPENCODE_CURL_TEST_CAPTURE,
+  };
+
+  await fs.mkdir(binDir, { recursive: true });
+  const curlScript = [
+    "#!/bin/sh",
+    "previous=\"\"",
+    "body_arg=\"\"",
+    "for arg in \"$@\"; do",
+    "  if [ \"$previous\" = \"--data-binary\" ]; then body_arg=\"$arg\"; fi",
+    "  previous=\"$arg\"",
+    "done",
+    "printf '%s\\n' \"$@\" > \"$FOROPENCODE_CURL_TEST_CAPTURE\"",
+    "body_file=\"$(echo \"$body_arg\" | cut -c2-)\"",
+    "if [ -z \"$body_file\" ] || [ ! -f \"$body_file\" ]; then exit 10; fi",
+    "if ! grep -q '\"password\":\"password\"' \"$body_file\"; then exit 11; fi",
+    "printf '{\"success\":true,\"data\":{\"access_token\":\"curl-access-token\",\"id\":1143}}\\n'",
+    "printf '\\n__CURL_STATUS__:200'",
+  ].join("\n");
+  await fs.writeFile(curlPath, curlScript, { encoding: "utf8", mode: 0o700 });
+
+  process.env.FOROPENCODE_PROXY = "http://proxy.test";
+  delete process.env.HTTPS_PROXY;
+  delete process.env.HTTP_PROXY;
+  delete process.env.ALL_PROXY;
+  process.env.PATH = binDir + ":" + (originalEnv.PATH || "");
+  process.env.FOROPENCODE_CURL_TEST_CAPTURE = captureFile;
+
+  try {
+    const client = new ForApiClient({
+      baseUrl: "http://example.test",
+      auth: {
+        username: "JunhaoCai",
+        password: "password",
+        preferPasswordLogin: true,
+      },
+      accountId: "account-1",
+      sessionCacheFile: path.join(cwd, "auth-session-cache.json"),
+    });
+    await client.ensureAuthenticated();
+
+    const curlArgs = await fs.readFile(captureFile, "utf8");
+    assert.match(curlArgs, /--data-binary\n@/);
+    assert.doesNotMatch(curlArgs, /password/);
+    assert.equal(client.authorization, "Bearer curl-access-token");
+  } finally {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("ForApiClient shares password reauthentication across concurrent expired requests", async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-retry-"));
   const sessionCacheFile = path.join(cwd, "auth-session-cache.json");

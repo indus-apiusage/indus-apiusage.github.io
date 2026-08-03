@@ -10,6 +10,8 @@ import { toNumber } from "./utils.mjs";
 const execFileAsync = promisify(execFile);
 const SESSION_CACHE_VERSION = 1;
 const DEFAULT_LOGIN_COOLDOWN_SECONDS = 15 * 60;
+const SESSION_LOCK_WAIT_MS = 5 * 60 * 1000;
+const SESSION_LOCK_STALE_MS = 10 * 60 * 1000;
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -97,7 +99,7 @@ function parseCookieJar(cookieText) {
 function buildCurlArgs({
   url,
   method,
-  body,
+  bodyFile,
   headers,
   cookieFile,
   proxyUrl,
@@ -140,8 +142,10 @@ function buildCurlArgs({
     args.push("--header", `${name}: ${value}`);
   }
 
-  if (body) {
-    args.push("--data-binary", JSON.stringify(body));
+  if (bodyFile) {
+    // Keep credentials out of curl's process arguments. The request body is
+    // written to a 600-permission temporary file by requestTextViaCurl.
+    args.push("--data-binary", `@${bodyFile}`);
   }
 
   args.push(url);
@@ -238,8 +242,13 @@ export class ForApiClient {
   async requestTextViaCurl(url, { method, body, headers }) {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-curl-"));
     const cookieFile = path.join(tempDir, "cookies.txt");
+    const bodyFile = body ? path.join(tempDir, "request-body.json") : "";
 
     await fs.writeFile(cookieFile, this.buildCookieJarText(), "utf8");
+    if (bodyFile) {
+      await fs.writeFile(bodyFile, JSON.stringify(body), { encoding: "utf8", mode: 0o600 });
+      await fs.chmod(bodyFile, 0o600);
+    }
     const variants = [
       { proxyUrl: this.proxyUrl, forceHttp11: false, label: this.proxyUrl ? "proxy" : "direct" },
     ];
@@ -262,7 +271,7 @@ export class ForApiClient {
             buildCurlArgs({
               url,
               method,
-              body,
+              bodyFile,
               headers,
               cookieFile,
               proxyUrl: variant.proxyUrl,
@@ -431,7 +440,7 @@ export class ForApiClient {
 
     const lockFile = `${this.sessionCacheFile}.lock`;
     await fs.mkdir(path.dirname(this.sessionCacheFile), { recursive: true });
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + SESSION_LOCK_WAIT_MS;
     let handle;
 
     while (!handle) {
@@ -449,7 +458,7 @@ export class ForApiClient {
 
         try {
           const stat = await fs.stat(lockFile);
-          if (Date.now() - stat.mtimeMs > 120_000) {
+          if (Date.now() - stat.mtimeMs > SESSION_LOCK_STALE_MS) {
             await fs.rm(lockFile, { force: true });
             continue;
           }
