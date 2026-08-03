@@ -694,8 +694,7 @@ final class ConsoleModel: ObservableObject {
 
     func hasCredentials(for id: UUID) -> Bool {
         guard let secret = secrets[id] else { return false }
-        return !secret.authorization.isEmpty || !secret.cookie.isEmpty ||
-            (!secret.username.isEmpty && !secret.password.isEmpty)
+        return hasSessionCredentials(secret)
     }
 
     func balance(for index: Int) -> SnapshotAccount? {
@@ -846,7 +845,7 @@ final class ConsoleModel: ObservableObject {
             return
         }
         guard secretsLoaded, hasCredentials(for: accountID) else {
-            if announce { eventMessage = "请先为该账号补充凭据，才能从网站读取 API Key" }
+            if announce { eventMessage = "请先为该账号补充 Cookie/Bearer Token，App 不会自动使用密码登录" }
             return
         }
 
@@ -1156,7 +1155,7 @@ final class ConsoleModel: ObservableObject {
         }
         guard credentialsReady else {
             phase = .failed
-            eventMessage = "请先为所有启用账号补充凭据"
+            eventMessage = "请先为所有启用账号补充 Cookie/Bearer Token 和 new-api-user；App 不会自动使用密码登录"
             settings.autoSync = false
             persistState()
             return
@@ -1249,7 +1248,7 @@ final class ConsoleModel: ObservableObject {
         }
         guard credentialsReady else {
             phase = .failed
-            eventMessage = "请先为所有启用账号补充凭据"
+            eventMessage = "请先为所有启用账号补充 Cookie/Bearer Token 和 new-api-user；App 不会自动使用密码登录"
             return
         }
         do {
@@ -1561,8 +1560,11 @@ final class ConsoleModel: ObservableObject {
                     // A stored browser session is authoritative. Do not send
                     // an old password alongside it, otherwise an expired
                     // session could trigger an unwanted login fallback.
-                    username: hasSessionCredentials(secret) ? "" : secret.username,
-                    password: hasSessionCredentials(secret) ? "" : secret.password
+                    // App-managed sync is intentionally session-only. The
+                    // password fields remain local for reference, but never
+                    // reach the sync process or the login endpoint.
+                    username: "",
+                    password: ""
                 )
             )
         }

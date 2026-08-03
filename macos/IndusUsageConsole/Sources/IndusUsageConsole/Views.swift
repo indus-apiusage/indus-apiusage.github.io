@@ -2012,6 +2012,11 @@ struct AccountEditorView: View {
                                     .editorTextField()
                             }
                         }
+                        Text("App 自动同步只使用 Cookie/Bearer Token；用户名和密码不会用于自动登录，以避免触发网站登录会话上限。")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(ConsolePalette.muted)
+                            .lineSpacing(3)
+                            .padding(.top, -8)
                         EditorField(title: "API KEYS", hint: "可添加多个；保存后会通过网站接口同步名称、剩余限额和无限额度状态") {
                             VStack(alignment: .leading, spacing: 9) {
                                 if draft.secret.apiKeys.isEmpty {
