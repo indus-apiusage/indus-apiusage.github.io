@@ -5,6 +5,19 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+ENV_FILE="${SYNC_ENV_FILE:-${ROOT_DIR}/work/sync.env}"
+
+# App-initiated reconnects run this script directly rather than through the
+# local-loop wrapper, so load the same 600-permission environment here too.
+if [ -n "${SYNC_ENV_FILE:-}" ] && [ ! -f "$ENV_FILE" ]; then
+  echo "Configured sync environment file does not exist: $ENV_FILE" >&2
+  exit 1
+fi
+if [ -f "$ENV_FILE" ]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 REMOTE_NAME="${SYNC_GIT_REMOTE_NAME:-origin}"
 REMOTE_BRANCH="${SYNC_GIT_REMOTE_BRANCH:-$CURRENT_BRANCH}"
