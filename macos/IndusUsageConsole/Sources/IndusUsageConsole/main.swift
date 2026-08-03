@@ -852,7 +852,11 @@ final class ConsoleModel: ObservableObject {
             let runtimeAccountID = try runtimeAccountIdentifier(for: profile)
             try clearCachedAuthSession(for: runtimeAccountID)
             eventMessage = "已清除 \(profile.label) 的本机认证缓存，正在用账号密码建立一次新会话"
-            runOnce(allowPasswordLoginFor: Set([accountID]))
+            try runPasswordReconnect(
+                profile: profile,
+                runtimeAccountID: runtimeAccountID,
+                accountID: accountID
+            )
         } catch {
             eventMessage = "重新连接准备失败：\(error.localizedDescription)"
         }
@@ -1335,6 +1339,53 @@ final class ConsoleModel: ObservableObject {
         }
     }
 
+    private func runPasswordReconnect(
+        profile: AccountProfile,
+        runtimeAccountID: String,
+        accountID: UUID
+    ) throws {
+        let envURL = try writeRuntimeEnvironment(
+            allowPasswordLoginFor: Set([accountID]),
+            accountIDs: Set([accountID])
+        )
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [
+            projectURL.appendingPathComponent("scripts/connect-account.sh").path,
+            "--account-id",
+            runtimeAccountID,
+        ]
+        process.currentDirectoryURL = projectURL
+        process.environment = processEnvironment(using: envURL)
+        process.standardOutput = pipe
+        process.standardError = pipe
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor in self?.appendLog(text) }
+        }
+        process.terminationHandler = { [weak self] process in
+            pipe.fileHandleForReading.readabilityHandler = nil
+            Task { @MainActor in
+                guard let self else { return }
+                self.onceProcess = nil
+                self.removeRuntimeEnvironment()
+                self.refreshRuntime()
+                if process.terminationStatus == 0 {
+                    self.phase = .success
+                    self.eventMessage = "\(profile.label) 已建立可续期的密码会话"
+                } else {
+                    self.phase = .failed
+                    self.eventMessage = "\(profile.label) 重新连接失败（状态 \(process.terminationStatus)），请查看运行日志"
+                }
+            }
+        }
+        try process.run()
+        onceProcess = process
+        phase = .running
+    }
+
     func chooseProject() {
         let panel = NSOpenPanel()
         panel.title = "选择 Indus API Usage 项目目录"
@@ -1561,12 +1612,16 @@ final class ConsoleModel: ObservableObject {
             .appendingPathComponent("IndusUsageConsole/state.json")
     }
 
-    private func writeRuntimeEnvironment(allowPasswordLoginFor: Set<UUID> = []) throws -> URL {
+    private func writeRuntimeEnvironment(
+        allowPasswordLoginFor: Set<UUID> = [],
+        accountIDs: Set<UUID>? = nil
+    ) throws -> URL {
         let workURL = projectURL.appendingPathComponent("work")
         try FileManager.default.createDirectory(at: workURL, withIntermediateDirectories: true)
         let envURL = workURL.appendingPathComponent("app-sync.env")
         let runtimeAccounts = makeRuntimeAccounts(
-            includeDisabled: false,
+            includeDisabled: accountIDs != nil,
+            accountIDs: accountIDs,
             allowPasswordLoginFor: allowPasswordLoginFor
         )
         let json = try String(decoding: JSONEncoder().encode(runtimeAccounts), as: UTF8.self)
@@ -1581,9 +1636,13 @@ final class ConsoleModel: ObservableObject {
 
     private func makeRuntimeAccounts(
         includeDisabled: Bool,
+        accountIDs: Set<UUID>? = nil,
         allowPasswordLoginFor: Set<UUID> = []
     ) -> [RuntimeAccount] {
-        let profiles = includeDisabled ? accounts : enabledAccounts
+        let allProfiles = includeDisabled ? accounts : enabledAccounts
+        let profiles = accountIDs.map { selectedIDs in
+            allProfiles.filter { selectedIDs.contains($0.id) }
+        } ?? allProfiles
         return profiles.map { profile in
             let secret = secrets[profile.id] ?? AccountSecret()
             let stableIndex = accounts.firstIndex(where: { $0.id == profile.id }) ?? 0

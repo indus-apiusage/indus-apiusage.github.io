@@ -179,7 +179,7 @@ FOROPENCODE_ALLOW_PASSWORD_LOGIN=1 npm run sync:publish
 export FOROPENCODE_PREFER_PASSWORD_LOGIN='true'
 ```
 
-当网站返回 `AUTH_SESSION_LIMIT`、刷新会话被撤销，或本机没有可续期的旧缓存时，系统会停止自动密码登录并标记该账号需要“手动重新连接”，不会在后续周期反复撞击登录接口。请先在网站端结束不需要的登录会话，再在 macOS App 的“账号矩阵”中点击该账号的“重新连接”；该操作只清除本机认证缓存，并明确发起一次新的账号密码登录。
+当网站返回 `AUTH_SESSION_LIMIT`、刷新会话被撤销，或本机没有可续期的旧缓存时，系统会停止自动密码登录并标记该账号需要“手动重新连接”，不会在后续周期反复撞击登录接口。请先在网站端结束不需要的登录会话，再在 macOS App 的“账号矩阵”中点击该账号的“重新连接”；该操作只清除并重建所选账号的本机认证缓存，不会同步其他账号或发布不完整的仪表盘数据。
 
 这个会话缓存只适合本机或受信任的私有运行环境。不要把 `work/auth-session-cache.json` 上传到公开仓库，也不要把它放进公开 GitHub Actions 缓存。
 
