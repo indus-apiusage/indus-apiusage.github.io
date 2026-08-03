@@ -1861,7 +1861,7 @@ struct SettingsView: View {
                         ), in: 1...1440)
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                     }
-                    SettingRow(title: "网络代理", detail: "例如 http://127.0.0.1:7897，留空使用系统环境") {
+                    SettingRow(title: "网络代理", detail: "例如 http://127.0.0.1:7890，留空使用系统环境") {
                         TextField("可选代理地址", text: Binding(
                             get: { model.settings.proxy },
                             set: { model.settings.proxy = $0; model.persistState() }
