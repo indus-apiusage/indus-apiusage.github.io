@@ -694,7 +694,7 @@ final class ConsoleModel: ObservableObject {
 
     func hasCredentials(for id: UUID) -> Bool {
         guard let secret = secrets[id] else { return false }
-        return hasSessionCredentials(secret)
+        return hasSessionCredentials(secret) || hasPasswordCredentials(secret)
     }
 
     func balance(for index: Int) -> SnapshotAccount? {
@@ -845,7 +845,7 @@ final class ConsoleModel: ObservableObject {
             return
         }
         guard secretsLoaded, hasCredentials(for: accountID) else {
-            if announce { eventMessage = "请先为该账号补充 Cookie/Bearer Token，App 不会自动使用密码登录" }
+            if announce { eventMessage = "请先为该账号补充 Cookie/Bearer Token 或账号密码" }
             return
         }
 
@@ -962,10 +962,10 @@ final class ConsoleModel: ObservableObject {
     private func apiKeySyncFailureMessage(_ error: Error, fallback: String) -> String {
         let detail = error.localizedDescription
         if detail.contains("AUTH_SESSION_LIMIT") {
-            return "网站拒绝了新的密码登录（会话数量已达上限）。请更新 Cookie/Bearer Token，或在网页登录会话中退出其他会话后重试"
+            return "网站拒绝了新的密码登录（会话数量已达上限）。App 已进入登录冷却，请在网页登录会话中退出其他会话后再重试"
         }
         if detail.contains("Unauthorized") || detail.contains("401") {
-            return "网站会话已失效，请更新 Cookie/Bearer Token 和 new-api-user；已有会话不会自动改用密码登录"
+            return "网站会话已失效，App 会在下一次同步重新登录；如再次达到会话上限，请先退出其他网页登录会话"
         }
         return fallback
     }
@@ -1155,7 +1155,7 @@ final class ConsoleModel: ObservableObject {
         }
         guard credentialsReady else {
             phase = .failed
-            eventMessage = "请先为所有启用账号补充 Cookie/Bearer Token 和 new-api-user；App 不会自动使用密码登录"
+            eventMessage = "请先为所有启用账号补充 Cookie/Bearer Token 或账号密码"
             settings.autoSync = false
             persistState()
             return
@@ -1248,7 +1248,7 @@ final class ConsoleModel: ObservableObject {
         }
         guard credentialsReady else {
             phase = .failed
-            eventMessage = "请先为所有启用账号补充 Cookie/Bearer Token 和 new-api-user；App 不会自动使用密码登录"
+            eventMessage = "请先为所有启用账号补充 Cookie/Bearer Token 或账号密码"
             return
         }
         do {
@@ -1546,10 +1546,11 @@ final class ConsoleModel: ObservableObject {
 
     private func makeRuntimeAccounts(includeDisabled: Bool) -> [RuntimeAccount] {
         let profiles = includeDisabled ? accounts : enabledAccounts
-        return profiles.enumerated().map { index, profile in
+        return profiles.map { profile in
             let secret = secrets[profile.id] ?? AccountSecret()
+            let stableIndex = accounts.firstIndex(where: { $0.id == profile.id }) ?? 0
             return RuntimeAccount(
-                id: "account-\(index + 1)",
+                id: "account-\(stableIndex + 1)",
                 label: profile.label.isEmpty ? profile.name : profile.label,
                 baseUrl: profile.baseURL,
                 scope: "self",
@@ -1557,14 +1558,12 @@ final class ConsoleModel: ObservableObject {
                     cookie: secret.cookie,
                     authorization: secret.authorization,
                     userId: profile.userID,
-                    // A stored browser session is authoritative. Do not send
-                    // an old password alongside it, otherwise an expired
-                    // session could trigger an unwanted login fallback.
-                    // App-managed sync is intentionally session-only. The
-                    // password fields remain local for reference, but never
-                    // reach the sync process or the login endpoint.
-                    username: "",
-                    password: ""
+                    // Password mode is preferred in the App. The Node client
+                    // persists the resulting session and reuses it across
+                    // cycles, so this does not create a login every 5 minutes.
+                    username: secret.username,
+                    password: secret.password,
+                    preferPasswordLogin: true
                 )
             )
         }
@@ -1573,6 +1572,11 @@ final class ConsoleModel: ObservableObject {
     private func hasSessionCredentials(_ secret: AccountSecret) -> Bool {
         !secret.cookie.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             !secret.authorization.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func hasPasswordCredentials(_ secret: AccountSecret) -> Bool {
+        !secret.username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !secret.password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func processEnvironment(using envURL: URL) -> [String: String] {
@@ -1781,6 +1785,7 @@ private struct RuntimeAuth: Encodable {
     var userId: String
     var username: String
     var password: String
+    var preferPasswordLogin: Bool
 }
 
 IndusUsageConsoleApp.main()

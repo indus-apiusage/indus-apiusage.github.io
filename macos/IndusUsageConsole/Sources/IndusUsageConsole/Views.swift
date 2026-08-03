@@ -1978,11 +1978,11 @@ struct AccountEditorView: View {
                                     .editorTextField()
                             }
                         }
-                        EditorField(title: "AUTHORIZATION", hint: "Cookie 失效后的备用 Token") {
+                        EditorField(title: "AUTHORIZATION", hint: "Cookie 或密码会话失效后的备用 Token") {
                             SecureField("Bearer Token", text: $draft.secret.authorization)
                                 .editorTextField()
                         }
-                        EditorField(title: "COOKIE", hint: "优先使用：从浏览器请求头复制 cookie 全字段") {
+                        EditorField(title: "COOKIE", hint: "可选；从浏览器请求头复制完整 Cookie") {
                             ZStack(alignment: .topLeading) {
                                 TextEditor(text: $draft.secret.cookie)
                                     .font(.system(size: 11, design: .monospaced))
@@ -2003,16 +2003,16 @@ struct AccountEditorView: View {
                             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
                         }
                         HStack(spacing: 14) {
-                            EditorField(title: "USERNAME", hint: "Cookie 失效后的备用登录") {
+                            EditorField(title: "USERNAME", hint: "密码登录账号；首次登录后会复用会话") {
                                 TextField("可选", text: $draft.secret.username)
                                     .editorTextField()
                             }
-                            EditorField(title: "PASSWORD", hint: "Cookie 失效后的备用密码") {
+                            EditorField(title: "PASSWORD", hint: "密码只用于建立会话，不会每周期重复登录") {
                                 SecureField("可选", text: $draft.secret.password)
                                     .editorTextField()
                             }
                         }
-                        Text("App 自动同步只使用 Cookie/Bearer Token；用户名和密码不会用于自动登录，以避免触发网站登录会话上限。")
+                        Text("App 默认优先使用账号密码。首次成功登录后会把短期会话安全保存在本机，并在后续同步中复用；只有会话失效才会重新登录。")
                             .font(.system(size: 10, weight: .medium, design: .rounded))
                             .foregroundStyle(ConsolePalette.muted)
                             .lineSpacing(3)

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 
 import { loadRuntimeConfig } from "../src/lib/config.mjs";
 import { ForApiClient } from "../src/lib/for-api-client.mjs";
@@ -85,6 +86,8 @@ async function createClient(runtime, accountID) {
   const client = new ForApiClient({
     baseUrl: account.baseUrl,
     auth: account.auth,
+    accountId: account.id,
+    sessionCacheFile: path.resolve(runtime.cwd, runtime.sessionCacheFile),
   });
   await client.ensureAuthenticated();
   return { account, client };

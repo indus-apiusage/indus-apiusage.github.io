@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,8 @@ import { promisify } from "node:util";
 import { toNumber } from "./utils.mjs";
 
 const execFileAsync = promisify(execFile);
+const SESSION_CACHE_VERSION = 1;
+const DEFAULT_LOGIN_COOLDOWN_SECONDS = 15 * 60;
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -147,19 +150,37 @@ function buildCurlArgs({
 }
 
 export class ForApiClient {
-  constructor({ baseUrl, auth }) {
+  constructor({ baseUrl, auth, accountId = "", sessionCacheFile = "" }) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.auth = auth;
+    this.accountId = String(accountId || "").trim();
+    this.sessionCacheFile = sessionCacheFile ? path.resolve(sessionCacheFile) : "";
+    this.usernameFingerprint = this.buildUsernameFingerprint(auth.username);
     this.cookies = parseCookieString(auth.cookie);
     this.authorization = normalizeAuthorization(auth.authorization);
+    this.preferPasswordLogin =
+      Boolean(auth.preferPasswordLogin) && Boolean(auth.username) && Boolean(auth.password);
+    const hasSuppliedSessionCredentials = this.cookies.size > 0 || Boolean(this.authorization);
+
+    // The App can deliberately prefer password authentication while retaining
+    // an old browser session in Keychain. Ignore that old session and use the
+    // persisted password session instead of creating a fresh login each cycle.
+    if (this.preferPasswordLogin) {
+      this.cookies.clear();
+      this.authorization = "";
+    }
+
     // A browser Cookie or Bearer token is an explicit session choice. Never
     // replace it with a password login after the session expires: New API may
     // reject that extra login when the account has reached its session limit.
-    this.hasInitialSessionCredentials = this.cookies.size > 0 || Boolean(this.authorization);
+    this.hasInitialSessionCredentials =
+      !this.preferPasswordLogin && hasSuppliedSessionCredentials;
     this.hasLoggedIn = false;
     this.userId = String(auth.userId || "").trim();
     this.loginPromise = null;
     this.passwordLoginAttempted = false;
+    this.sessionFromCache = false;
+    this.sessionVersion = 0;
   }
 
   get proxyUrl() {
@@ -322,12 +343,229 @@ export class ForApiClient {
     }
   }
 
+  hasPasswordCredentials() {
+    return Boolean(this.auth.username) && Boolean(this.auth.password);
+  }
+
+  buildUsernameFingerprint(username) {
+    const normalized = String(username || "").trim();
+    if (!normalized) {
+      return "";
+    }
+
+    return createHash("sha256")
+      .update(`${this.baseUrl}\n${normalized}`)
+      .digest("hex");
+  }
+
+  get loginCooldownSeconds() {
+    const candidate = Number(process.env.FOROPENCODE_LOGIN_COOLDOWN_SECONDS);
+    return Number.isFinite(candidate) && candidate >= 0
+      ? Math.min(Math.floor(candidate), 24 * 60 * 60)
+      : DEFAULT_LOGIN_COOLDOWN_SECONDS;
+  }
+
+  emptySessionCache() {
+    return {
+      version: SESSION_CACHE_VERSION,
+      accounts: {},
+    };
+  }
+
+  async readSessionCache() {
+    if (!this.sessionCacheFile || !this.accountId) {
+      return this.emptySessionCache();
+    }
+
+    try {
+      const parsed = JSON.parse(await fs.readFile(this.sessionCacheFile, "utf8"));
+      if (!parsed || typeof parsed !== "object") {
+        return this.emptySessionCache();
+      }
+
+      return {
+        version: SESSION_CACHE_VERSION,
+        accounts: parsed.accounts && typeof parsed.accounts === "object"
+          ? parsed.accounts
+          : {},
+      };
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return this.emptySessionCache();
+      }
+
+      // A damaged local cache must not prevent a fresh password login.
+      return this.emptySessionCache();
+    }
+  }
+
+  async writeSessionCache(cache) {
+    if (!this.sessionCacheFile || !this.accountId) {
+      return;
+    }
+
+    await fs.mkdir(path.dirname(this.sessionCacheFile), { recursive: true });
+    const temporaryFile = `${this.sessionCacheFile}.${process.pid}.tmp`;
+    const serialized = `${JSON.stringify({
+      version: SESSION_CACHE_VERSION,
+      accounts: cache.accounts && typeof cache.accounts === "object" ? cache.accounts : {},
+    }, null, 2)}\n`;
+    try {
+      await fs.writeFile(
+        temporaryFile,
+        serialized,
+        { encoding: "utf8", mode: 0o600 },
+      );
+      await fs.chmod(temporaryFile, 0o600);
+      await fs.rename(temporaryFile, this.sessionCacheFile);
+    } finally {
+      await fs.rm(temporaryFile, { force: true });
+    }
+    await fs.chmod(this.sessionCacheFile, 0o600);
+  }
+
+  async withSessionCacheLock(worker) {
+    if (!this.sessionCacheFile || !this.accountId) {
+      return worker();
+    }
+
+    const lockFile = `${this.sessionCacheFile}.lock`;
+    await fs.mkdir(path.dirname(this.sessionCacheFile), { recursive: true });
+    const deadline = Date.now() + 30_000;
+    let handle;
+
+    while (!handle) {
+      try {
+        handle = await fs.open(lockFile, "wx", 0o600);
+        await handle.writeFile(`${process.pid}\n`, "utf8");
+        await handle.close();
+      } catch (error) {
+        await handle?.close().catch(() => {});
+        handle = undefined;
+
+        if (error?.code !== "EEXIST") {
+          throw error;
+        }
+
+        try {
+          const stat = await fs.stat(lockFile);
+          if (Date.now() - stat.mtimeMs > 120_000) {
+            await fs.rm(lockFile, { force: true });
+            continue;
+          }
+        } catch (statError) {
+          if (statError?.code !== "ENOENT") {
+            throw statError;
+          }
+        }
+
+        if (Date.now() >= deadline) {
+          throw new Error("Timed out waiting for the local authentication session lock.");
+        }
+        await sleep(100);
+      }
+    }
+
+    try {
+      return await worker();
+    } finally {
+      await fs.rm(lockFile, { force: true });
+    }
+  }
+
+  isUsableCachedSession(entry) {
+    if (!entry || typeof entry !== "object") {
+      return false;
+    }
+    if (String(entry.baseUrl || "").replace(/\/+$/, "") !== this.baseUrl) {
+      return false;
+    }
+    if (this.userId && entry.userId && String(entry.userId) !== this.userId) {
+      return false;
+    }
+    if (this.usernameFingerprint && entry.usernameFingerprint !== this.usernameFingerprint) {
+      return false;
+    }
+
+    return Boolean(String(entry.cookie || "").trim() || String(entry.authorization || "").trim());
+  }
+
+  applyCachedSession(entry) {
+    this.cookies = parseCookieString(entry.cookie);
+    this.authorization = normalizeAuthorization(entry.authorization);
+    if (!this.userId && entry.userId) {
+      this.userId = String(entry.userId).trim();
+    }
+    this.sessionFromCache = true;
+    this.hasLoggedIn = false;
+    this.passwordLoginAttempted = false;
+    this.sessionVersion += 1;
+  }
+
+  async restoreCachedSession() {
+    if (this.hasInitialSessionCredentials || !this.hasPasswordCredentials()) {
+      return false;
+    }
+
+    const cache = await this.readSessionCache();
+    const entry = cache.accounts[this.accountId];
+    if (!this.isUsableCachedSession(entry)) {
+      return false;
+    }
+
+    this.applyCachedSession(entry);
+    return true;
+  }
+
+  sessionEntry() {
+    return {
+      baseUrl: this.baseUrl,
+      userId: this.userId,
+      usernameFingerprint: this.usernameFingerprint,
+      cookie: this.cookieHeader,
+      authorization: this.authorization,
+      savedAt: new Date().toISOString(),
+    };
+  }
+
+  async invalidateCachedSession() {
+    if (!this.sessionCacheFile || !this.accountId) {
+      return;
+    }
+
+    const currentCookie = this.cookieHeader;
+    const currentAuthorization = this.authorization;
+    await this.withSessionCacheLock(async () => {
+      const cache = await this.readSessionCache();
+      const entry = cache.accounts[this.accountId];
+      const isCurrent = entry &&
+        ((currentCookie && entry.cookie === currentCookie) ||
+          (currentAuthorization && entry.authorization === currentAuthorization));
+      if (isCurrent) {
+        delete cache.accounts[this.accountId];
+        await this.writeSessionCache(cache);
+      }
+    });
+    this.sessionFromCache = false;
+  }
+
+  loginBlockedError(entry) {
+    const until = new Date(Number(entry.loginBlockedUntil));
+    return new Error(
+      `Password login is temporarily paused after AUTH_SESSION_LIMIT until ${until.toISOString()}. Reuse a valid cached session or end another website session before retrying.`,
+    );
+  }
+
+  isSessionLimitError(error) {
+    return /AUTH_SESSION_LIMIT/i.test(String(error?.message || error));
+  }
+
   canRetryWithPassword({ authRequired, retried }) {
     return (
       authRequired &&
       !retried &&
       !this.hasInitialSessionCredentials &&
-      !this.passwordLoginAttempted &&
+      (!this.passwordLoginAttempted || Boolean(this.loginPromise)) &&
       Boolean(this.auth.username) &&
       Boolean(this.auth.password)
     );
@@ -347,6 +585,8 @@ export class ForApiClient {
     if (authRequired) {
       await this.ensureAuthenticated();
     }
+
+    const sessionVersionAtRequest = this.sessionVersion;
 
     const headers = {
       Accept: "application/json",
@@ -410,9 +650,28 @@ export class ForApiClient {
     }
 
     if (status >= 300 && status < 400) {
+      const sessionWasRefreshed =
+        authRequired &&
+        !retried &&
+        !this.hasInitialSessionCredentials &&
+        this.hasPasswordCredentials() &&
+        this.sessionVersion !== sessionVersionAtRequest;
+
+      if (sessionWasRefreshed) {
+        return this.requestJson(path, {
+          method,
+          body,
+          authRequired,
+          retried: true,
+          attempt,
+          maxAttempts,
+        });
+      }
+
       const canRetryWithCredentials = this.canRetryWithPassword({ authRequired, retried });
 
       if (canRetryWithCredentials) {
+        await this.invalidateCachedSession();
         this.cookies.clear();
         this.authorization = "";
         this.hasLoggedIn = false;
@@ -442,9 +701,28 @@ export class ForApiClient {
 
     if (status === 401) {
       const message = json?.message || "Unauthorized";
+      const sessionWasRefreshed =
+        authRequired &&
+        !retried &&
+        !this.hasInitialSessionCredentials &&
+        this.hasPasswordCredentials() &&
+        this.sessionVersion !== sessionVersionAtRequest;
+
+      if (sessionWasRefreshed) {
+        return this.requestJson(path, {
+          method,
+          body,
+          authRequired,
+          retried: true,
+          attempt,
+          maxAttempts,
+        });
+      }
+
       const canRetryWithCredentials = this.canRetryWithPassword({ authRequired, retried });
 
       if (canRetryWithCredentials) {
+        await this.invalidateCachedSession();
         this.cookies.clear();
         this.authorization = "";
         this.hasLoggedIn = false;
@@ -596,60 +874,109 @@ export class ForApiClient {
       );
     }
 
-    // Password login is only used for accounts configured without a session token.
-    this.authorization = "";
-
-    if (!this.auth.username || !this.auth.password) {
+    if (!this.hasPasswordCredentials()) {
       throw new Error(
         "Missing authentication. Set FOROPENCODE_AUTHORIZATION, FOROPENCODE_ACCESS_TOKEN, FOROPENCODE_COOKIE, or FOROPENCODE_USERNAME/FOROPENCODE_PASSWORD.",
       );
     }
 
     this.passwordLoginAttempted = true;
-    const path = `/api/user/login?turnstile=${encodeURIComponent(this.auth.turnstileToken || "")}`;
-    const response = await this.requestJson(path, {
-      method: "POST",
-      body: {
-        username: this.auth.username,
-        password: this.auth.password,
-      },
-      authRequired: false,
+    return this.withSessionCacheLock(async () => {
+      const cache = await this.readSessionCache();
+      const cachedEntry = cache.accounts[this.accountId];
+
+      if (this.isUsableCachedSession(cachedEntry)) {
+        this.applyCachedSession(cachedEntry);
+        return;
+      }
+
+      if (
+        cachedEntry?.loginBlockedUntil &&
+        Number(cachedEntry.loginBlockedUntil) > Date.now()
+      ) {
+        throw this.loginBlockedError(cachedEntry);
+      }
+
+      this.cookies.clear();
+      this.authorization = "";
+
+      const loginPath = `/api/user/login?turnstile=${encodeURIComponent(this.auth.turnstileToken || "")}`;
+      try {
+        const response = await this.requestJson(loginPath, {
+          method: "POST",
+          body: {
+            username: this.auth.username,
+            password: this.auth.password,
+          },
+          authRequired: false,
+        });
+
+        if (!response?.success) {
+          const detail = [response?.code, response?.message]
+            .filter((value) => value !== undefined && value !== null && String(value).trim())
+            .map(String)
+            .join(": ") || "Login failed.";
+          throw new Error(detail);
+        }
+
+        const accessToken =
+          response?.data?.access_token ??
+          response?.data?.accessToken ??
+          response?.data?.token ??
+          response?.access_token ??
+          response?.accessToken ??
+          response?.token;
+        if (accessToken) {
+          this.authorization = normalizeAuthorization(String(accessToken));
+        }
+
+        const userId =
+          response?.data?.id ??
+          response?.data?.user?.id ??
+          response?.user?.id ??
+          response?.id;
+
+        if (userId !== undefined && userId !== null && userId !== "") {
+          this.userId = String(userId).trim();
+        }
+
+        this.hasLoggedIn = true;
+        this.sessionFromCache = false;
+        this.sessionVersion += 1;
+        cache.accounts[this.accountId] = this.sessionEntry();
+        await this.writeSessionCache(cache);
+        this.passwordLoginAttempted = false;
+      } catch (error) {
+        if (this.isSessionLimitError(error)) {
+          cache.accounts[this.accountId] = {
+            baseUrl: this.baseUrl,
+            userId: this.userId,
+            usernameFingerprint: this.usernameFingerprint,
+            cookie: "",
+            authorization: "",
+            loginBlockedUntil: Date.now() + this.loginCooldownSeconds * 1000,
+            loginBlockedReason: "AUTH_SESSION_LIMIT",
+            lastLoginAttemptAt: new Date().toISOString(),
+          };
+          await this.writeSessionCache(cache);
+        }
+        throw error;
+      }
     });
-
-    if (!response?.success) {
-      throw new Error(response?.message || "Login failed.");
-    }
-
-    const accessToken =
-      response?.data?.access_token ??
-      response?.data?.accessToken ??
-      response?.access_token ??
-      response?.accessToken;
-    if (accessToken) {
-      this.authorization = normalizeAuthorization(String(accessToken));
-    }
-
-    const userId =
-      response?.data?.id ??
-      response?.data?.user?.id ??
-      response?.user?.id ??
-      response?.id;
-
-    if (userId !== undefined && userId !== null && userId !== "") {
-      this.userId = String(userId).trim();
-    }
-
-    this.hasLoggedIn = true;
   }
 
   async ensureAuthenticated() {
-    // Prefer a browser session or access token. Password login is only used
-    // when the account was configured without any session credentials.
+    // Prefer an explicitly supplied session unless the App requested password
+    // mode. Password mode restores a local session and logs in only once.
     if (this.cookies.size > 0 || this.authorization) {
       return;
     }
 
-    if (this.auth.username && this.auth.password) {
+    if (await this.restoreCachedSession()) {
+      return;
+    }
+
+    if (this.hasPasswordCredentials()) {
       await this.login();
       return;
     }

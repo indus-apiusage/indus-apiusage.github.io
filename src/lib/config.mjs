@@ -13,6 +13,7 @@ const DEFAULT_REFRESH_DAYS = 2;
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_OUTPUT_FILE = "docs/data/latest.json";
 const DEFAULT_CACHE_FILE = "work/usage-log-cache.json";
+const DEFAULT_SESSION_CACHE_FILE = "work/auth-session-cache.json";
 
 async function readOptionalJson(filePath) {
   try {
@@ -58,6 +59,17 @@ function resolveRefreshDays(envValue, fileValue, lookbackDays) {
 function resolveScope(envValue, fileValue) {
   const candidate = String(envValue || fileValue || DEFAULT_SCOPE).toLowerCase();
   return candidate === "admin" ? "admin" : "self";
+}
+
+function resolveBoolean(envValue, fileValue, fallback = false) {
+  const candidate = envValue ?? fileValue;
+  if (candidate === undefined || candidate === null || candidate === "") {
+    return fallback;
+  }
+  if (typeof candidate === "boolean") {
+    return candidate;
+  }
+  return /^(1|true|yes|on)$/i.test(String(candidate).trim());
 }
 
 function resolveDate(value, timeZone) {
@@ -139,6 +151,10 @@ function normalizeAccount(entry, index, defaults) {
       username: String(sourceAuth.username || ""),
       password: String(sourceAuth.password || ""),
       turnstileToken: String(sourceAuth.turnstileToken || ""),
+      preferPasswordLogin: resolveBoolean(
+        sourceAuth.preferPasswordLogin,
+        defaults.preferPasswordLogin,
+      ),
     },
   };
 }
@@ -166,6 +182,10 @@ function buildRuntimeAccounts(env, defaults) {
     username: env.FOROPENCODE_USERNAME || "",
     password: env.FOROPENCODE_PASSWORD || "",
     turnstileToken: env.FOROPENCODE_TURNSTILE_TOKEN || "",
+    preferPasswordLogin: resolveBoolean(
+      env.FOROPENCODE_PREFER_PASSWORD_LOGIN,
+      defaults.preferPasswordLogin,
+    ),
   };
 
   const accounts = [
@@ -182,6 +202,10 @@ function buildRuntimeAccounts(env, defaults) {
           username: env.FOROPENCODE_ACCOUNT_1_USERNAME || legacyAuth.username,
           password: env.FOROPENCODE_ACCOUNT_1_PASSWORD || legacyAuth.password,
           turnstileToken: env.FOROPENCODE_ACCOUNT_1_TURNSTILE_TOKEN || legacyAuth.turnstileToken,
+          preferPasswordLogin: resolveBoolean(
+            env.FOROPENCODE_ACCOUNT_1_PREFER_PASSWORD_LOGIN,
+            legacyAuth.preferPasswordLogin,
+          ),
         },
       },
       0,
@@ -217,6 +241,10 @@ function buildRuntimeAccounts(env, defaults) {
             username: env.FOROPENCODE_ACCOUNT_2_USERNAME || "",
             password: env.FOROPENCODE_ACCOUNT_2_PASSWORD || "",
             turnstileToken: env.FOROPENCODE_ACCOUNT_2_TURNSTILE_TOKEN || "",
+            preferPasswordLogin: resolveBoolean(
+              env.FOROPENCODE_ACCOUNT_2_PREFER_PASSWORD_LOGIN,
+              legacyAuth.preferPasswordLogin,
+            ),
           },
         },
         1,
@@ -239,6 +267,10 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
 
   const baseUrl = env.FOROPENCODE_BASE_URL || fileConfig.baseUrl || DEFAULT_BASE_URL;
   const scope = resolveScope(env.FOROPENCODE_SCOPE, fileConfig.scope);
+  const preferPasswordLogin = resolveBoolean(
+    env.FOROPENCODE_PREFER_PASSWORD_LOGIN,
+    fileConfig.preferPasswordLogin,
+  );
   const legacyAuth = {
     cookie: env.FOROPENCODE_COOKIE || "",
     authorization:
@@ -248,8 +280,9 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     username: env.FOROPENCODE_USERNAME || "",
     password: env.FOROPENCODE_PASSWORD || "",
     turnstileToken: env.FOROPENCODE_TURNSTILE_TOKEN || "",
+    preferPasswordLogin,
   };
-  const accounts = buildRuntimeAccounts(env, { baseUrl, scope });
+  const accounts = buildRuntimeAccounts(env, { baseUrl, scope, preferPasswordLogin });
 
   return {
     cwd,
@@ -263,6 +296,8 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     pageSize: resolvePageSize(env.USAGE_PAGE_SIZE, fileConfig.pageSize),
     outputFile: env.OUTPUT_FILE || fileConfig.outputFile || DEFAULT_OUTPUT_FILE,
     cacheFile: env.USAGE_CACHE_FILE || fileConfig.cacheFile || DEFAULT_CACHE_FILE,
+    sessionCacheFile:
+      env.AUTH_SESSION_CACHE_FILE || fileConfig.sessionCacheFile || DEFAULT_SESSION_CACHE_FILE,
     auth: legacyAuth,
     accounts,
     people: normalizePeople(fileConfig),

@@ -170,10 +170,12 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
-async function loadAccountSnapshot(account) {
+async function loadAccountSnapshot(account, runtime) {
   const client = new ForApiClient({
     baseUrl: account.baseUrl,
     auth: account.auth,
+    accountId: account.id,
+    sessionCacheFile: path.resolve(runtime.cwd, runtime.sessionCacheFile),
   });
   // Complete password authentication before parallel requests share the client.
   await client.ensureAuthenticated();
@@ -196,7 +198,9 @@ async function main() {
   const runtime = await loadRuntimeConfig();
   const outputPath = path.resolve(runtime.cwd, runtime.outputFile);
   const publicWidgetPath = path.resolve(runtime.cwd, "docs/data/widget.json");
-  const accountSnapshots = await Promise.all(runtime.accounts.map(loadAccountSnapshot));
+  const accountSnapshots = await Promise.all(
+    runtime.accounts.map((account) => loadAccountSnapshot(account, runtime)),
+  );
   const primarySnapshot = accountSnapshots[0] ?? {
     account: {
       id: "account-1",

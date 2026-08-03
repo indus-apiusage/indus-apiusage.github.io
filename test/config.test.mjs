@@ -67,6 +67,23 @@ test("loadRuntimeConfig supports two account credentials without putting them in
   assert.equal(runtime.accounts[1].auth.authorization, "Bearer account-two");
 });
 
+test("loadRuntimeConfig enables password session reuse without exposing a cache in the repo", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-config-password-"));
+
+  const runtime = await loadRuntimeConfig({
+    cwd,
+    env: {
+      FOROPENCODE_USERNAME: "JunhaoCai",
+      FOROPENCODE_PASSWORD: "password",
+      FOROPENCODE_PREFER_PASSWORD_LOGIN: "true",
+    },
+  });
+
+  assert.equal(runtime.accounts[0].auth.username, "JunhaoCai");
+  assert.equal(runtime.accounts[0].auth.preferPasswordLogin, true);
+  assert.equal(runtime.sessionCacheFile, "work/auth-session-cache.json");
+});
+
 test("loadRuntimeConfig limits the refresh window to the configured lookback", async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-config-refresh-"));
 
