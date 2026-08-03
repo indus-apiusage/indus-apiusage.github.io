@@ -183,6 +183,8 @@ export FOROPENCODE_PREFER_PASSWORD_LOGIN='true'
 
 这个会话缓存只适合本机或受信任的私有运行环境。不要把 `work/auth-session-cache.json` 上传到公开仓库，也不要把它放进公开 GitHub Actions 缓存。
 
+本地循环如果在写入 `docs/data/latest.json` 与 `docs/data/widget.json` 后意外停止，会在下一周期仅恢复并推送这两份生成的数据，再继续正常抓取。若工作区还包含代码、配置或其他文件改动，循环仍会安全跳过，不会自动提交你的本地工作。
+
 如果站点启用了 Turnstile，还可以额外传：
 
 ```bash

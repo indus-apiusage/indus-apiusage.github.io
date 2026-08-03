@@ -10,6 +10,36 @@ import { fileURLToPath } from "node:url";
 const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+async function git(args, options = {}) {
+  return execFileAsync("git", args, options);
+}
+
+async function createRecoveryRepository() {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-sync-recovery-"));
+  const repoDir = path.join(tempDir, "repository");
+  const remoteDir = path.join(tempDir, "remote.git");
+
+  await fs.mkdir(path.join(repoDir, "scripts"), { recursive: true });
+  await fs.mkdir(path.join(repoDir, "docs", "data"), { recursive: true });
+  await fs.copyFile(
+    path.join(rootDir, "scripts", "sync-and-push.sh"),
+    path.join(repoDir, "scripts", "sync-and-push.sh"),
+  );
+  await fs.writeFile(path.join(repoDir, "docs", "data", "latest.json"), "{}\n");
+  await fs.writeFile(path.join(repoDir, "docs", "data", "widget.json"), "{}\n");
+
+  await git(["init", "--bare", remoteDir]);
+  await git(["init", "--initial-branch=main"], { cwd: repoDir });
+  await git(["config", "user.name", "Test User"], { cwd: repoDir });
+  await git(["config", "user.email", "test@example.invalid"], { cwd: repoDir });
+  await git(["add", "."], { cwd: repoDir });
+  await git(["commit", "-m", "initial"], { cwd: repoDir });
+  await git(["remote", "add", "origin", remoteDir], { cwd: repoDir });
+  await git(["push", "-u", "origin", "main"], { cwd: repoDir });
+
+  return { tempDir, repoDir };
+}
+
 test("sync-and-push loads the App SYNC_ENV_FILE before invoking npm", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-sync-env-"));
   const binDir = path.join(tempDir, "bin");
@@ -75,6 +105,51 @@ test("sync-and-push loads the App SYNC_ENV_FILE before invoking npm", async () =
     });
 
     assert.equal(await fs.readFile(captureFile, "utf8"), accountsJson);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("sync-and-push recovers only generated dashboard data after an interrupted cycle", async () => {
+  const { tempDir, repoDir } = await createRecoveryRepository();
+
+  try {
+    await fs.writeFile(path.join(repoDir, "docs", "data", "latest.json"), '{"updated":true}\n');
+    await fs.writeFile(path.join(repoDir, "docs", "data", "widget.json"), '{"updated":true}\n');
+
+    await execFileAsync("bash", ["scripts/sync-and-push.sh", "--recover-pending-data"], {
+      cwd: repoDir,
+    });
+
+    const { stdout } = await git(["status", "--porcelain"], { cwd: repoDir });
+    assert.equal(stdout, "");
+
+    const remoteLog = await git(["--git-dir", path.join(tempDir, "remote.git"), "log", "--oneline", "main"]);
+    assert.match(remoteLog.stdout, /chore: refresh usage dashboard data/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("sync-and-push refuses recovery when non-dashboard changes are present", async () => {
+  const { tempDir, repoDir } = await createRecoveryRepository();
+
+  try {
+    await fs.writeFile(path.join(repoDir, "docs", "data", "latest.json"), '{"updated":true}\n');
+    await fs.writeFile(path.join(repoDir, "README.md"), "do not auto-commit this\n");
+
+    await assert.rejects(
+      execFileAsync("bash", ["scripts/sync-and-push.sh", "--recover-pending-data"], { cwd: repoDir }),
+      (error) => {
+        assert.equal(error.code, 1);
+        assert.match(error.stderr, /non-dashboard changes/);
+        return true;
+      },
+    );
+
+    const { stdout } = await git(["status", "--porcelain"], { cwd: repoDir });
+    assert.match(stdout, /docs\/data\/latest\.json/);
+    assert.match(stdout, /README\.md/);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

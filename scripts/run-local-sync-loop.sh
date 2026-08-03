@@ -102,13 +102,46 @@ run_child() {
   return "$status"
 }
 
+has_only_pending_dashboard_data() {
+  local change path saw_dashboard_data=0
+
+  while IFS= read -r change; do
+    [ -n "$change" ] || continue
+    path="${change:3}"
+    case "$path" in
+      docs/data/latest.json|docs/data/widget.json)
+        saw_dashboard_data=1
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done < <(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)
+
+  [ "$saw_dashboard_data" -eq 1 ]
+}
+
 prepare_sync_cycle() {
   local behind_count
 
   if [ -n "$(git -C "$ROOT_DIR" status --porcelain)" ]; then
-    log_message "Skipping sync cycle because the working tree is not clean."
-    git -C "$ROOT_DIR" status --short >>"$LOG_FILE" 2>&1
-    return 1
+    if ! has_only_pending_dashboard_data; then
+      log_message "Skipping sync cycle because the working tree is not clean."
+      git -C "$ROOT_DIR" status --short >>"$LOG_FILE" 2>&1
+      return 1
+    fi
+
+    log_message "Recovering pending dashboard data from an interrupted sync cycle."
+    if ! run_child bash "${ROOT_DIR}/scripts/sync-and-push.sh" --recover-pending-data >>"$LOG_FILE" 2>&1; then
+      log_message "Failed to recover pending dashboard data."
+      return 1
+    fi
+
+    if [ -n "$(git -C "$ROOT_DIR" status --porcelain)" ]; then
+      log_message "Recovery finished but the working tree is still not clean."
+      git -C "$ROOT_DIR" status --short >>"$LOG_FILE" 2>&1
+      return 1
+    fi
   fi
 
   if ! git -C "$ROOT_DIR" fetch "$REMOTE_NAME" "$REMOTE_BRANCH" >>"$LOG_FILE" 2>&1; then
