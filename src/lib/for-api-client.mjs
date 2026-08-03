@@ -8,10 +8,12 @@ import { promisify } from "node:util";
 import { toNumber } from "./utils.mjs";
 
 const execFileAsync = promisify(execFile);
-const SESSION_CACHE_VERSION = 1;
-const DEFAULT_LOGIN_COOLDOWN_SECONDS = 15 * 60;
+const SESSION_CACHE_VERSION = 2;
+const DEFAULT_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 90;
 const SESSION_LOCK_WAIT_MS = 5 * 60 * 1000;
 const SESSION_LOCK_STALE_MS = 10 * 60 * 1000;
+const AUTH_REFRESH_PATH = "/api/user/auth/refresh";
+const REFRESH_COOKIE_NAME = "new_api_refresh";
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -60,6 +62,33 @@ function normalizeAuthorization(value) {
   return /^Bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
 }
 
+function parseAccessTokenPayload(authorization) {
+  const token = String(authorization || "").replace(/^Bearer\s+/i, "").trim();
+  const [, payload] = token.split(".");
+
+  if (!payload) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeEpochSeconds(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 0;
+  }
+
+  // The New API response uses epoch seconds. Accept milliseconds defensively
+  // so a deployment-specific response cannot disable proactive refreshes.
+  return numeric > 10_000_000_000 ? Math.floor(numeric / 1000) : Math.floor(numeric);
+}
+
 function extractSetCookies(headers) {
   if (typeof headers.getSetCookie === "function") {
     return headers.getSetCookie();
@@ -75,7 +104,10 @@ function parseCookieJar(cookieText) {
   for (const line of String(cookieText || "").split(/\r?\n/)) {
     const trimmed = line.trim();
 
-    if (!trimmed || trimmed.startsWith("#")) {
+    // curl writes HttpOnly cookies as "#HttpOnly_<domain>" in Netscape jars.
+    // Treat that prefix as a cookie record, otherwise the refresh cookie is
+    // discarded and the next token expiry forces an unnecessary password login.
+    if (!trimmed || (trimmed.startsWith("#") && !trimmed.startsWith("#HttpOnly_"))) {
       continue;
     }
 
@@ -164,6 +196,9 @@ export class ForApiClient {
     this.authorization = normalizeAuthorization(auth.authorization);
     this.preferPasswordLogin =
       Boolean(auth.preferPasswordLogin) && Boolean(auth.username) && Boolean(auth.password);
+    // Password login creates a server-side session. It is permitted only for
+    // an explicit reconnect action, never as an automatic recovery strategy.
+    this.allowPasswordLogin = Boolean(auth.allowPasswordLogin);
     const hasSuppliedSessionCredentials = this.cookies.size > 0 || Boolean(this.authorization);
 
     // The App can deliberately prefer password authentication while retaining
@@ -182,9 +217,12 @@ export class ForApiClient {
     this.hasLoggedIn = false;
     this.userId = String(auth.userId || "").trim();
     this.loginPromise = null;
+    this.refreshPromise = null;
     this.passwordLoginAttempted = false;
     this.sessionFromCache = false;
     this.sessionVersion = 0;
+    this.sessionId = "";
+    this.accessTokenExpiresAt = 0;
   }
 
   get proxyUrl() {
@@ -341,14 +379,23 @@ export class ForApiClient {
 
   rememberCookies(response) {
     for (const cookie of extractSetCookies(response.headers)) {
-      const [pair] = cookie.split(";");
+      const [pair, ...attributes] = cookie.split(";");
       const [name, ...valueParts] = pair.split("=");
 
       if (!name || valueParts.length === 0) {
         continue;
       }
 
-      this.cookies.set(name.trim(), valueParts.join("=").trim());
+      const normalizedName = name.trim();
+      const maxAge = attributes
+        .map((attribute) => attribute.trim())
+        .find((attribute) => /^max-age=/i.test(attribute));
+      if (maxAge && Number(maxAge.split("=")[1]) <= 0) {
+        this.cookies.delete(normalizedName);
+        continue;
+      }
+
+      this.cookies.set(normalizedName, valueParts.join("=").trim());
     }
   }
 
@@ -367,11 +414,102 @@ export class ForApiClient {
       .digest("hex");
   }
 
-  get loginCooldownSeconds() {
-    const candidate = Number(process.env.FOROPENCODE_LOGIN_COOLDOWN_SECONDS);
-    return Number.isFinite(candidate) && candidate >= 0
-      ? Math.min(Math.floor(candidate), 24 * 60 * 60)
-      : DEFAULT_LOGIN_COOLDOWN_SECONDS;
+  get accessTokenRefreshSkewSeconds() {
+    const candidate = Number(process.env.FOROPENCODE_ACCESS_TOKEN_REFRESH_SKEW_SECONDS);
+    return Number.isFinite(candidate) && candidate >= 15
+      ? Math.min(Math.floor(candidate), 10 * 60)
+      : DEFAULT_ACCESS_TOKEN_REFRESH_SKEW_SECONDS;
+  }
+
+  accessTokenExpiryFor(authorization, explicitExpiresAt = 0) {
+    const explicit = normalizeEpochSeconds(explicitExpiresAt);
+    if (explicit) {
+      return explicit;
+    }
+
+    return normalizeEpochSeconds(parseAccessTokenPayload(authorization).exp);
+  }
+
+  sessionIdFor(authorization, explicitSessionId = "") {
+    const supplied = String(explicitSessionId || "").trim();
+    if (supplied) {
+      return supplied;
+    }
+
+    return String(parseAccessTokenPayload(authorization).sid || "").trim();
+  }
+
+  hasRefreshCookie() {
+    return this.cookies.has(REFRESH_COOKIE_NAME);
+  }
+
+  hasRefreshablePasswordSession() {
+    return this.preferPasswordLogin && this.hasRefreshCookie();
+  }
+
+  accessTokenNeedsRefresh() {
+    if (!this.authorization) {
+      return true;
+    }
+
+    const expiresAt = this.accessTokenExpiresAt || this.accessTokenExpiryFor(this.authorization);
+    if (!expiresAt) {
+      return false;
+    }
+
+    return Date.now() >= (expiresAt - this.accessTokenRefreshSkewSeconds) * 1000;
+  }
+
+  accessTokenIsExpired() {
+    const expiresAt = this.accessTokenExpiresAt || this.accessTokenExpiryFor(this.authorization);
+    return Boolean(expiresAt) && Date.now() >= expiresAt * 1000;
+  }
+
+  cachedSessionHasFreshAccessToken(entry) {
+    if (!this.isUsableCachedSession(entry)) {
+      return false;
+    }
+
+    const expiresAt = this.accessTokenExpiryFor(
+      entry.authorization,
+      entry.accessTokenExpiresAt,
+    );
+    return Boolean(expiresAt) && Date.now() < (expiresAt - this.accessTokenRefreshSkewSeconds) * 1000;
+  }
+
+  applyAuthenticationResponse(response) {
+    const data = response?.data && typeof response.data === "object" ? response.data : response;
+    const accessToken =
+      data?.access_token ??
+      data?.accessToken ??
+      data?.token ??
+      response?.access_token ??
+      response?.accessToken ??
+      response?.token;
+
+    if (!accessToken) {
+      throw new Error("Authentication response did not contain an access token.");
+    }
+
+    this.authorization = normalizeAuthorization(String(accessToken));
+
+    const userId =
+      data?.id ??
+      data?.user?.id ??
+      response?.user?.id ??
+      response?.id;
+    if (userId !== undefined && userId !== null && userId !== "") {
+      this.userId = String(userId).trim();
+    }
+
+    this.sessionId = this.sessionIdFor(
+      this.authorization,
+      data?.session?.sid ?? data?.session?.session_id ?? data?.sessionId,
+    );
+    this.accessTokenExpiresAt = this.accessTokenExpiryFor(
+      this.authorization,
+      data?.access_expires_at ?? data?.accessExpiresAt,
+    );
   }
 
   emptySessionCache() {
@@ -505,6 +643,11 @@ export class ForApiClient {
     if (!this.userId && entry.userId) {
       this.userId = String(entry.userId).trim();
     }
+    this.sessionId = this.sessionIdFor(this.authorization, entry.sessionId);
+    this.accessTokenExpiresAt = this.accessTokenExpiryFor(
+      this.authorization,
+      entry.accessTokenExpiresAt,
+    );
     this.sessionFromCache = true;
     this.hasLoggedIn = false;
     this.passwordLoginAttempted = false;
@@ -533,6 +676,8 @@ export class ForApiClient {
       usernameFingerprint: this.usernameFingerprint,
       cookie: this.cookieHeader,
       authorization: this.authorization,
+      sessionId: this.sessionId || undefined,
+      accessTokenExpiresAt: this.accessTokenExpiresAt || undefined,
       savedAt: new Date().toISOString(),
     };
   }
@@ -558,26 +703,167 @@ export class ForApiClient {
     this.sessionFromCache = false;
   }
 
-  loginBlockedError(entry) {
-    const until = new Date(Number(entry.loginBlockedUntil));
-    return new Error(
-      `Password login is temporarily paused after AUTH_SESSION_LIMIT until ${until.toISOString()}. Reuse a valid cached session or end another website session before retrying.`,
-    );
-  }
-
   isSessionLimitError(error) {
     return /AUTH_SESSION_LIMIT/i.test(String(error?.message || error));
   }
 
-  canRetryWithPassword({ authRequired, retried }) {
-    return (
-      authRequired &&
-      !retried &&
-      !this.hasInitialSessionCredentials &&
-      (!this.passwordLoginAttempted || Boolean(this.loginPromise)) &&
-      Boolean(this.auth.username) &&
-      Boolean(this.auth.password)
+  isRefreshSessionInvalidError(error) {
+    return /AUTH_(?:UNAUTHORIZED|SESSION_REVOKED|SESSION_MISMATCH|REFRESH_RACE|TOKEN_EXPIRED)/i
+      .test(String(error?.message || error));
+  }
+
+  passwordSessionRecoveryError() {
+    return new Error(
+      "This account requires a manual reconnect. Automatic password re-login is disabled to prevent AUTH_SESSION_LIMIT. End unwanted website sessions first, then use the App's reconnect action.",
     );
+  }
+
+  manualReconnectEntry(reason) {
+    return {
+      baseUrl: this.baseUrl,
+      userId: this.userId,
+      usernameFingerprint: this.usernameFingerprint,
+      cookie: "",
+      authorization: "",
+      requiresManualReconnect: true,
+      reconnectReason: reason,
+      reconnectRequiredAt: new Date().toISOString(),
+    };
+  }
+
+  async persistSession(cache) {
+    if (!this.sessionCacheFile || !this.accountId) {
+      return;
+    }
+
+    cache.accounts[this.accountId] = this.sessionEntry();
+    await this.writeSessionCache(cache);
+  }
+
+  async markPasswordSessionForManualReconnect(reason) {
+    if (!this.sessionCacheFile || !this.accountId) {
+      return;
+    }
+
+    await this.withSessionCacheLock(async () => {
+      const cache = await this.readSessionCache();
+      const entry = cache.accounts[this.accountId];
+      if (entry?.requiresManualReconnect) {
+        return;
+      }
+
+      cache.accounts[this.accountId] = this.manualReconnectEntry(reason);
+      await this.writeSessionCache(cache);
+    });
+  }
+
+  async refreshPasswordSession({ force = false } = {}) {
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    if (!this.hasRefreshablePasswordSession()) {
+      return false;
+    }
+
+    if (!force && !this.accessTokenNeedsRefresh()) {
+      return false;
+    }
+
+    this.refreshPromise = this.performPasswordSessionRefresh({ force });
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  async performPasswordSessionRefresh({ force }) {
+    return this.withSessionCacheLock(async () => {
+        const cache = await this.readSessionCache();
+        const cachedEntry = cache.accounts[this.accountId];
+
+        // Another local process may have rotated the one-time refresh cookie
+        // while this process waited on the shared cache lock. Reuse its fresh
+        // result instead of sending the old cookie again.
+        if (this.cachedSessionHasFreshAccessToken(cachedEntry)) {
+          this.applyCachedSession(cachedEntry);
+          return true;
+        }
+
+        // A concurrent local request may have already found that this server
+        // session is no longer valid. Do not send its old rotating refresh
+        // cookie again after the shared lock becomes available.
+        if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
+          this.cookies.clear();
+          this.authorization = "";
+          this.sessionId = "";
+          this.accessTokenExpiresAt = 0;
+          this.sessionFromCache = false;
+          throw this.passwordSessionRecoveryError();
+        }
+
+        if (
+          this.isUsableCachedSession(cachedEntry) &&
+          (cachedEntry.cookie !== this.cookieHeader || cachedEntry.authorization !== this.authorization)
+        ) {
+          this.applyCachedSession(cachedEntry);
+        }
+
+        if (!this.hasRefreshablePasswordSession()) {
+          return false;
+        }
+
+        if (!force && !this.accessTokenNeedsRefresh()) {
+          return false;
+        }
+
+        const refreshHeaders = {
+          Origin: this.baseUrl,
+        };
+        if (this.sessionId) {
+          refreshHeaders["X-Auth-Session"] = this.sessionId;
+        }
+
+        try {
+          const response = await this.requestJson(AUTH_REFRESH_PATH, {
+            method: "POST",
+            authRequired: false,
+            maxAttempts: 1,
+            extraHeaders: refreshHeaders,
+          });
+
+          if (!response?.success) {
+            const detail = [response?.code, response?.message]
+              .filter((value) => value !== undefined && value !== null && String(value).trim())
+              .map(String)
+              .join(": ") || "Session refresh failed.";
+            throw new Error(detail);
+          }
+
+          this.applyAuthenticationResponse(response);
+          this.hasLoggedIn = false;
+          this.sessionFromCache = false;
+          this.sessionVersion += 1;
+          await this.persistSession(cache);
+          return true;
+        } catch (error) {
+          if (this.isRefreshSessionInvalidError(error) || this.isSessionLimitError(error)) {
+            const reason = this.isSessionLimitError(error)
+              ? "AUTH_SESSION_LIMIT"
+              : "AUTH_SESSION_REVOKED";
+            cache.accounts[this.accountId] = this.manualReconnectEntry(reason);
+            await this.writeSessionCache(cache);
+            this.cookies.clear();
+            this.authorization = "";
+            this.sessionId = "";
+            this.accessTokenExpiresAt = 0;
+            this.sessionFromCache = false;
+            throw this.passwordSessionRecoveryError();
+          }
+          throw error;
+        }
+    });
   }
 
   authenticationError(path, message) {
@@ -590,7 +876,15 @@ export class ForApiClient {
     return new Error(`Authentication failed for ${path}: ${message}`);
   }
 
-  async requestJson(path, { method = "GET", body, authRequired = true, retried = false, attempt = 1, maxAttempts = 3 } = {}) {
+  async requestJson(path, {
+    method = "GET",
+    body,
+    authRequired = true,
+    retried = false,
+    attempt = 1,
+    maxAttempts = 3,
+    extraHeaders = {},
+  } = {}) {
     if (authRequired) {
       await this.ensureAuthenticated();
     }
@@ -599,6 +893,7 @@ export class ForApiClient {
 
     const headers = {
       Accept: "application/json",
+      ...extraHeaders,
     };
 
     if (body) {
@@ -651,6 +946,7 @@ export class ForApiClient {
           retried,
           attempt: attempt + 1,
           maxAttempts,
+          extraHeaders,
         });
       }
 
@@ -674,17 +970,17 @@ export class ForApiClient {
           retried: true,
           attempt,
           maxAttempts,
+          extraHeaders,
         });
       }
 
-      const canRetryWithCredentials = this.canRetryWithPassword({ authRequired, retried });
+      const canRetryWithRefresh =
+        authRequired &&
+        !retried &&
+        !this.hasInitialSessionCredentials &&
+        this.hasPasswordCredentials();
 
-      if (canRetryWithCredentials) {
-        await this.invalidateCachedSession();
-        this.cookies.clear();
-        this.authorization = "";
-        this.hasLoggedIn = false;
-        await this.login();
+      if (canRetryWithRefresh && await this.refreshPasswordSession({ force: true })) {
         return this.requestJson(path, {
           method,
           body,
@@ -692,6 +988,7 @@ export class ForApiClient {
           retried: true,
           attempt,
           maxAttempts,
+          extraHeaders,
         });
       }
 
@@ -709,7 +1006,10 @@ export class ForApiClient {
     }
 
     if (status === 401) {
-      const message = json?.message || "Unauthorized";
+      const message = [json?.code, json?.message]
+        .filter((value) => value !== undefined && value !== null && String(value).trim())
+        .map(String)
+        .join(": ") || "Unauthorized";
       const sessionWasRefreshed =
         authRequired &&
         !retried &&
@@ -725,17 +1025,17 @@ export class ForApiClient {
           retried: true,
           attempt,
           maxAttempts,
+          extraHeaders,
         });
       }
 
-      const canRetryWithCredentials = this.canRetryWithPassword({ authRequired, retried });
+      const canRetryWithRefresh =
+        authRequired &&
+        !retried &&
+        !this.hasInitialSessionCredentials &&
+        this.hasPasswordCredentials();
 
-      if (canRetryWithCredentials) {
-        await this.invalidateCachedSession();
-        this.cookies.clear();
-        this.authorization = "";
-        this.hasLoggedIn = false;
-        await this.login();
+      if (canRetryWithRefresh && await this.refreshPasswordSession({ force: true })) {
         return this.requestJson(path, {
           method,
           body,
@@ -743,6 +1043,7 @@ export class ForApiClient {
           retried: true,
           attempt,
           maxAttempts,
+          extraHeaders,
         });
       }
 
@@ -889,6 +1190,11 @@ export class ForApiClient {
       );
     }
 
+    if (!this.allowPasswordLogin) {
+      await this.markPasswordSessionForManualReconnect("PASSWORD_LOGIN_NOT_APPROVED");
+      throw this.passwordSessionRecoveryError();
+    }
+
     this.passwordLoginAttempted = true;
     return this.withSessionCacheLock(async () => {
       const cache = await this.readSessionCache();
@@ -899,11 +1205,17 @@ export class ForApiClient {
         return;
       }
 
-      if (
-        cachedEntry?.loginBlockedUntil &&
-        Number(cachedEntry.loginBlockedUntil) > Date.now()
-      ) {
-        throw this.loginBlockedError(cachedEntry);
+      if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
+        if (this.allowPasswordLogin) {
+          delete cache.accounts[this.accountId];
+          await this.writeSessionCache(cache);
+        } else if (!cachedEntry?.requiresManualReconnect) {
+          cache.accounts[this.accountId] = this.manualReconnectEntry("AUTH_SESSION_LIMIT");
+          await this.writeSessionCache(cache);
+          throw this.passwordSessionRecoveryError();
+        } else {
+          throw this.passwordSessionRecoveryError();
+        }
       }
 
       this.cookies.clear();
@@ -928,45 +1240,16 @@ export class ForApiClient {
           throw new Error(detail);
         }
 
-        const accessToken =
-          response?.data?.access_token ??
-          response?.data?.accessToken ??
-          response?.data?.token ??
-          response?.access_token ??
-          response?.accessToken ??
-          response?.token;
-        if (accessToken) {
-          this.authorization = normalizeAuthorization(String(accessToken));
-        }
-
-        const userId =
-          response?.data?.id ??
-          response?.data?.user?.id ??
-          response?.user?.id ??
-          response?.id;
-
-        if (userId !== undefined && userId !== null && userId !== "") {
-          this.userId = String(userId).trim();
-        }
+        this.applyAuthenticationResponse(response);
 
         this.hasLoggedIn = true;
         this.sessionFromCache = false;
         this.sessionVersion += 1;
-        cache.accounts[this.accountId] = this.sessionEntry();
-        await this.writeSessionCache(cache);
+        await this.persistSession(cache);
         this.passwordLoginAttempted = false;
       } catch (error) {
         if (this.isSessionLimitError(error)) {
-          cache.accounts[this.accountId] = {
-            baseUrl: this.baseUrl,
-            userId: this.userId,
-            usernameFingerprint: this.usernameFingerprint,
-            cookie: "",
-            authorization: "",
-            loginBlockedUntil: Date.now() + this.loginCooldownSeconds * 1000,
-            loginBlockedReason: "AUTH_SESSION_LIMIT",
-            lastLoginAttemptAt: new Date().toISOString(),
-          };
+          cache.accounts[this.accountId] = this.manualReconnectEntry("AUTH_SESSION_LIMIT");
           await this.writeSessionCache(cache);
         }
         throw error;
@@ -976,16 +1259,30 @@ export class ForApiClient {
 
   async ensureAuthenticated() {
     // Prefer an explicitly supplied session unless the App requested password
-    // mode. Password mode restores a local session and logs in only once.
+    // mode. Password mode restores a local session, then rotates its refresh
+    // cookie before the short-lived access token expires.
     if (this.cookies.size > 0 || this.authorization) {
+      if (this.hasRefreshablePasswordSession() && this.accessTokenNeedsRefresh()) {
+        await this.refreshPasswordSession();
+      } else if (this.preferPasswordLogin && this.accessTokenIsExpired()) {
+        // A legacy cache created before refresh-cookie persistence cannot be
+        // renewed safely. Do not create another server login session here.
+        await this.markPasswordSessionForManualReconnect("AUTH_REFRESH_COOKIE_MISSING");
+        throw this.passwordSessionRecoveryError();
+      }
       return;
     }
 
     if (await this.restoreCachedSession()) {
+      await this.ensureAuthenticated();
       return;
     }
 
     if (this.hasPasswordCredentials()) {
+      if (!this.allowPasswordLogin) {
+        await this.markPasswordSessionForManualReconnect("PASSWORD_LOGIN_NOT_APPROVED");
+        throw this.passwordSessionRecoveryError();
+      }
       await this.login();
       return;
     }

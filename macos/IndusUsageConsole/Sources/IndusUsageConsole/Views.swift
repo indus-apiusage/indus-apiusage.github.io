@@ -1663,6 +1663,15 @@ struct AccountDetailCard: View {
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(ConsolePalette.ink)
                 Spacer()
+                if model.canReconnectPasswordSession(for: profile.id) {
+                    Button {
+                        model.reconnectPasswordSession(for: profile.id)
+                    } label: {
+                        Label("重新连接", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
+                    .help("仅清除本机认证缓存，并在下一次同步时用账号密码建立一个新会话")
+                }
                 Button {
                     model.openTopUp(for: profile)
                 } label: {

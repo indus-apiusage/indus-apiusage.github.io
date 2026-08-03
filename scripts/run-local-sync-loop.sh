@@ -58,15 +58,48 @@ acquire_lock
 echo "$$" > "$LOCK_DIR/pid"
 echo "$$" > "$PID_FILE"
 
+ACTIVE_CHILD_PID=""
+
 cleanup() {
-  rm -rf "$LOCK_DIR"
-  rm -f "$PID_FILE"
+  if [ -n "$ACTIVE_CHILD_PID" ] && kill -0 "$ACTIVE_CHILD_PID" 2>/dev/null; then
+    kill -TERM "$ACTIVE_CHILD_PID" 2>/dev/null || true
+    wait "$ACTIVE_CHILD_PID" 2>/dev/null || true
+  fi
+
+  # Never remove a lock or PID file claimed by a newer loop process.
+  if [ "$(cat "$LOCK_DIR/pid" 2>/dev/null || true)" = "$$" ]; then
+    rm -rf "$LOCK_DIR"
+  fi
+  if [ "$(cat "$PID_FILE" 2>/dev/null || true)" = "$$" ]; then
+    rm -f "$PID_FILE"
+  fi
 }
 
-trap cleanup EXIT INT TERM
+handle_signal() {
+  printf '[%s] Received %s; stopping sync loop\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG_FILE"
+  exit 0
+}
+
+trap cleanup EXIT
+trap 'handle_signal SIGINT' INT
+trap 'handle_signal SIGTERM' TERM
 
 log_message() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG_FILE"
+}
+
+run_child() {
+  "$@" &
+  ACTIVE_CHILD_PID=$!
+  local status=0
+
+  if wait "$ACTIVE_CHILD_PID"; then
+    status=0
+  else
+    status=$?
+  fi
+  ACTIVE_CHILD_PID=""
+  return "$status"
 }
 
 prepare_sync_cycle() {
@@ -100,7 +133,7 @@ while true; do
   log_message "Starting sync cycle"
 
   if prepare_sync_cycle; then
-    if bash "${ROOT_DIR}/scripts/run-local-sync.sh" >>"$LOG_FILE" 2>&1; then
+    if run_child bash "${ROOT_DIR}/scripts/run-local-sync.sh" >>"$LOG_FILE" 2>&1; then
       log_message "Sync cycle finished"
     else
       log_message "Sync cycle failed"
@@ -116,5 +149,5 @@ while true; do
     source "$ENV_FILE"
   fi
   normalize_interval
-  sleep "$SYNC_INTERVAL_SECONDS"
+  run_child sleep "$SYNC_INTERVAL_SECONDS" || exit 0
 done

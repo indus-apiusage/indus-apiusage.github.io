@@ -6,15 +6,25 @@ import path from "node:path";
 
 import { ForApiClient } from "../src/lib/for-api-client.mjs";
 
-function mockJsonResponse(status, body) {
+function mockJsonResponse(status, body, { setCookies = [] } = {}) {
   return {
     status,
     headers: {
-      getSetCookie: () => [],
-      get: () => null,
+      getSetCookie: () => setCookies,
+      get: (name) => (String(name).toLowerCase() === "set-cookie" ? setCookies[0] ?? null : null),
     },
     text: async () => JSON.stringify(body),
   };
+}
+
+function makeAccessToken({ sid, expiresAt, userId = 1143 }) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
+    sid,
+    sub: String(userId),
+    iat: Math.floor(Date.now() / 1000),
+    exp: expiresAt,
+  })}.signature`;
 }
 
 async function withNoProxy(worker) {
@@ -168,6 +178,72 @@ test("ForApiClient does not replace an expired session with a password login", a
   }
 });
 
+test("ForApiClient only opens a password session after an explicit reconnect approval", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-explicit-reconnect-"));
+  const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
+  const originalFetch = globalThis.fetch;
+  let loginCalls = 0;
+
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/api/user/login")) {
+      loginCalls += 1;
+      return mockJsonResponse(200, {
+        success: true,
+        data: { access_token: "explicit-access-token", id: 1143 },
+      });
+    }
+
+    return mockJsonResponse(200, { success: true, data: {} });
+  };
+
+  try {
+    await withNoProxy(async () => {
+      const automaticAuth = {
+        username: "JunhaoCai",
+        password: "password",
+        preferPasswordLogin: true,
+      };
+      const automaticClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: automaticAuth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+
+      await assert.rejects(
+        () => automaticClient.ensureAuthenticated(),
+        /requires a manual reconnect/,
+      );
+      assert.equal(loginCalls, 0);
+
+      const blockedCache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      assert.equal(blockedCache.accounts["account-1"].requiresManualReconnect, true);
+      assert.equal(blockedCache.accounts["account-1"].reconnectReason, "PASSWORD_LOGIN_NOT_APPROVED");
+
+      const reconnectClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: { ...automaticAuth, allowPasswordLogin: true },
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await reconnectClient.ensureAuthenticated();
+      assert.equal(loginCalls, 1);
+
+      const backgroundClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: automaticAuth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await backgroundClient.ensureAuthenticated();
+      assert.equal(loginCalls, 1);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("ForApiClient reuses a password session across client instances", async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-cache-"));
   const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
@@ -192,6 +268,7 @@ test("ForApiClient reuses a password session across client instances", async () 
         username: "JunhaoCai",
         password: "password",
         preferPasswordLogin: true,
+        allowPasswordLogin: true,
       };
       const firstClient = new ForApiClient({
         baseUrl: "http://example.test",
@@ -203,7 +280,7 @@ test("ForApiClient reuses a password session across client instances", async () 
 
       const secondClient = new ForApiClient({
         baseUrl: "http://example.test",
-        auth,
+        auth: { ...auth, allowPasswordLogin: false },
         accountId: "account-1",
         sessionCacheFile,
       });
@@ -246,6 +323,7 @@ test("ForApiClient serializes concurrent password logins per account", async () 
         username: "JunhaoCai",
         password: "password",
         preferPasswordLogin: true,
+        allowPasswordLogin: true,
       };
       const clients = [1, 2].map(() => new ForApiClient({
         baseUrl: "http://example.test",
@@ -262,7 +340,7 @@ test("ForApiClient serializes concurrent password logins per account", async () 
   }
 });
 
-test("ForApiClient cools down after an authentication session limit", async () => {
+test("ForApiClient requires a manual reconnect after an authentication session limit", async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-cooldown-"));
   const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
   const originalFetch = globalThis.fetch;
@@ -279,6 +357,7 @@ test("ForApiClient cools down after an authentication session limit", async () =
         username: "JunhaoCai",
         password: "password",
         preferPasswordLogin: true,
+        allowPasswordLogin: true,
       };
       const firstClient = new ForApiClient({
         baseUrl: "http://example.test",
@@ -293,13 +372,13 @@ test("ForApiClient cools down after an authentication session limit", async () =
 
       const secondClient = new ForApiClient({
         baseUrl: "http://example.test",
-        auth,
+        auth: { ...auth, allowPasswordLogin: false },
         accountId: "account-1",
         sessionCacheFile,
       });
       await assert.rejects(
         () => secondClient.ensureAuthenticated(),
-        /Password login is temporarily paused/,
+        /requires a manual reconnect/,
       );
       assert.equal(loginCalls, 1);
     });
@@ -332,6 +411,7 @@ test("ForApiClient recognizes a JSON session-limit login response", async () => 
           username: "JunhaoCai",
           password: "password",
           preferPasswordLogin: true,
+          allowPasswordLogin: true,
         },
         accountId: "account-1",
         sessionCacheFile,
@@ -339,7 +419,8 @@ test("ForApiClient recognizes a JSON session-limit login response", async () => 
       await assert.rejects(() => client.ensureAuthenticated(), /AUTH_SESSION_LIMIT/);
 
       const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
-      assert.equal(cache.accounts["account-1"].loginBlockedReason, "AUTH_SESSION_LIMIT");
+      assert.equal(cache.accounts["account-1"].requiresManualReconnect, true);
+      assert.equal(cache.accounts["account-1"].reconnectReason, "AUTH_SESSION_LIMIT");
       assert.equal(loginCalls, 1);
     });
   } finally {
@@ -367,14 +448,18 @@ test("ForApiClient keeps password bodies out of curl process arguments", async (
     "#!/bin/sh",
     "previous=\"\"",
     "body_arg=\"\"",
+    "cookie_jar=\"\"",
     "for arg in \"$@\"; do",
     "  if [ \"$previous\" = \"--data-binary\" ]; then body_arg=\"$arg\"; fi",
+    "  if [ \"$previous\" = \"--cookie-jar\" ]; then cookie_jar=\"$arg\"; fi",
     "  previous=\"$arg\"",
     "done",
     "printf '%s\\n' \"$@\" > \"$FOROPENCODE_CURL_TEST_CAPTURE\"",
     "body_file=\"$(echo \"$body_arg\" | cut -c2-)\"",
     "if [ -z \"$body_file\" ] || [ ! -f \"$body_file\" ]; then exit 10; fi",
     "if ! grep -q '\"password\":\"password\"' \"$body_file\"; then exit 11; fi",
+    "if [ -z \"$cookie_jar\" ]; then exit 12; fi",
+    "printf '# Netscape HTTP Cookie File\\n#HttpOnly_example.test\\tFALSE\\t/api/user/auth\\tFALSE\\t0\\tnew_api_refresh\\tcurl-refresh-token\\n' > \"$cookie_jar\"",
     "printf '{\"success\":true,\"data\":{\"access_token\":\"curl-access-token\",\"id\":1143}}\\n'",
     "printf '\\n__CURL_STATUS__:200'",
   ].join("\n");
@@ -394,6 +479,7 @@ test("ForApiClient keeps password bodies out of curl process arguments", async (
         username: "JunhaoCai",
         password: "password",
         preferPasswordLogin: true,
+        allowPasswordLogin: true,
       },
       accountId: "account-1",
       sessionCacheFile: path.join(cwd, "auth-session-cache.json"),
@@ -404,6 +490,9 @@ test("ForApiClient keeps password bodies out of curl process arguments", async (
     assert.match(curlArgs, /--data-binary\n@/);
     assert.doesNotMatch(curlArgs, /password/);
     assert.equal(client.authorization, "Bearer curl-access-token");
+    assert.match(client.cookieHeader, /new_api_refresh=curl-refresh-token/);
+    const cache = JSON.parse(await fs.readFile(path.join(cwd, "auth-session-cache.json"), "utf8"));
+    assert.match(cache.accounts["account-1"].cookie, /new_api_refresh=curl-refresh-token/);
   } finally {
     for (const [key, value] of Object.entries(originalEnv)) {
       if (value === undefined) delete process.env[key];
@@ -413,30 +502,54 @@ test("ForApiClient keeps password bodies out of curl process arguments", async (
   }
 });
 
-test("ForApiClient shares password reauthentication across concurrent expired requests", async () => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-retry-"));
+test("ForApiClient rotates expiring password sessions without another password login", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-refresh-"));
   const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
   const originalFetch = globalThis.fetch;
+  const now = Math.floor(Date.now() / 1000);
+  const expiringToken = makeAccessToken({ sid: "session-one", expiresAt: now + 30 });
+  const refreshedToken = makeAccessToken({ sid: "session-one", expiresAt: now + 900 });
   let loginCalls = 0;
-  let loginToken = "old-access-token";
+  let refreshCalls = 0;
+  const protectedRequests = [];
 
   globalThis.fetch = async (url, options = {}) => {
-    if (String(url).includes("/api/user/login")) {
+    const pathName = new URL(String(url)).pathname;
+    if (pathName === "/api/user/login") {
       loginCalls += 1;
       return mockJsonResponse(200, {
         success: true,
-        data: { access_token: loginToken, id: 1143 },
+        data: {
+          access_token: expiringToken,
+          access_expires_at: now + 30,
+          user: { id: 1143 },
+          session: { sid: "session-one" },
+        },
+      }, {
+        setCookies: ["new_api_refresh=refresh-one; Path=/api/user/auth; HttpOnly; Max-Age=3600"],
       });
     }
 
-    const authorization = options.headers?.Authorization;
-    if (authorization === "Bearer old-access-token") {
-      if (String(url).includes("/groups")) {
-        await new Promise((resolve) => setTimeout(resolve, 35));
-      }
-      return mockJsonResponse(401, { message: "Unauthorized" });
+    if (pathName === "/api/user/auth/refresh") {
+      refreshCalls += 1;
+      assert.match(String(options.headers?.Cookie || ""), /new_api_refresh=refresh-one/);
+      assert.equal(options.headers?.Origin, "http://example.test");
+      assert.equal(options.headers?.["X-Auth-Session"], "session-one");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: refreshedToken,
+          access_expires_at: now + 900,
+          user: { id: 1143 },
+          session: { sid: "session-one" },
+        },
+      }, {
+        setCookies: ["new_api_refresh=refresh-two; Path=/api/user/auth; HttpOnly; Max-Age=3600"],
+      });
     }
 
+    protectedRequests.push({ pathName, authorization: options.headers?.Authorization });
     return mockJsonResponse(200, { success: true, data: {} });
   };
 
@@ -446,20 +559,195 @@ test("ForApiClient shares password reauthentication across concurrent expired re
         username: "JunhaoCai",
         password: "password",
         preferPasswordLogin: true,
+        allowPasswordLogin: true,
       };
-      const client = new ForApiClient({
+      const firstClient = new ForApiClient({
         baseUrl: "http://example.test",
         auth,
         accountId: "account-1",
         sessionCacheFile,
       });
-      await client.ensureAuthenticated();
+      await firstClient.ensureAuthenticated();
 
-      loginToken = "new-access-token";
-      await Promise.all([client.fetchSelf(), client.fetchSelfGroups()]);
+      const secondClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      const thirdClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await Promise.all([secondClient.fetchSelf(), thirdClient.fetchSelfGroups()]);
 
-      assert.equal(loginCalls, 2);
-      assert.equal(client.authorization, "Bearer new-access-token");
+      assert.equal(loginCalls, 1);
+      assert.equal(refreshCalls, 1);
+      assert.equal(secondClient.authorization, `Bearer ${refreshedToken}`);
+      assert.equal(thirdClient.authorization, `Bearer ${refreshedToken}`);
+      assert.ok(protectedRequests.every((request) => request.authorization === `Bearer ${refreshedToken}`));
+
+      const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      assert.equal(cache.accounts["account-1"].authorization, `Bearer ${refreshedToken}`);
+      assert.match(cache.accounts["account-1"].cookie, /new_api_refresh=refresh-two/);
+      assert.equal(cache.accounts["account-1"].sessionId, "session-one");
+      assert.equal(cache.accounts["account-1"].accessTokenExpiresAt, now + 900);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ForApiClient stops concurrent refreshes after a session is revoked", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-refresh-revoked-"));
+  const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
+  const originalFetch = globalThis.fetch;
+  const now = Math.floor(Date.now() / 1000);
+  const expiringToken = makeAccessToken({ sid: "revoked-session", expiresAt: now + 30 });
+  let loginCalls = 0;
+  let refreshCalls = 0;
+
+  globalThis.fetch = async (url) => {
+    const pathName = new URL(String(url)).pathname;
+    if (pathName === "/api/user/login") {
+      loginCalls += 1;
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: expiringToken,
+          access_expires_at: now + 30,
+          user: { id: 1143 },
+          session: { sid: "revoked-session" },
+        },
+      }, {
+        setCookies: ["new_api_refresh=revoked-refresh; Path=/api/user/auth; HttpOnly; Max-Age=3600"],
+      });
+    }
+
+    if (pathName === "/api/user/auth/refresh") {
+      refreshCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return mockJsonResponse(401, {
+        success: false,
+        code: "AUTH_SESSION_REVOKED",
+        message: "Unauthorized",
+      });
+    }
+
+    throw new Error(`Unexpected protected request after a revoked refresh session: ${pathName}`);
+  };
+
+  try {
+    await withNoProxy(async () => {
+      const auth = {
+        username: "JunhaoCai",
+        password: "password",
+        preferPasswordLogin: true,
+        allowPasswordLogin: true,
+      };
+      const firstClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await firstClient.ensureAuthenticated();
+
+      const secondClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      const thirdClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      const outcomes = await Promise.allSettled([
+        secondClient.fetchSelf(),
+        thirdClient.fetchSelfGroups(),
+      ]);
+
+      assert.ok(outcomes.every((outcome) => outcome.status === "rejected"));
+      assert.ok(outcomes.every((outcome) =>
+        /Automatic password re-login is disabled/.test(String(outcome.reason?.message || "")),
+      ));
+
+      assert.equal(loginCalls, 1);
+      assert.equal(refreshCalls, 1);
+      const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      assert.equal(cache.accounts["account-1"].requiresManualReconnect, true);
+      assert.equal(cache.accounts["account-1"].reconnectReason, "AUTH_SESSION_REVOKED");
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ForApiClient quarantines legacy password caches that lack a refresh cookie", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-legacy-cache-"));
+  const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
+  const originalFetch = globalThis.fetch;
+  const now = Math.floor(Date.now() / 1000);
+  const expiringToken = makeAccessToken({ sid: "legacy-session", expiresAt: now - 1 });
+  let loginCalls = 0;
+
+  globalThis.fetch = async (url) => {
+    const pathName = new URL(String(url)).pathname;
+    if (pathName === "/api/user/login") {
+      loginCalls += 1;
+      // Simulate a cache written by the pre-refresh-cookie client.
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: expiringToken,
+          access_expires_at: now - 1,
+          user: { id: 1143 },
+          session: { sid: "legacy-session" },
+        },
+      });
+    }
+
+    throw new Error(`Unexpected request from a legacy cache: ${pathName}`);
+  };
+
+  try {
+    await withNoProxy(async () => {
+      const auth = {
+        username: "JunhaoCai",
+        password: "password",
+        preferPasswordLogin: true,
+        allowPasswordLogin: true,
+      };
+      const firstClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await firstClient.ensureAuthenticated();
+
+      const secondClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await assert.rejects(
+        () => secondClient.fetchSelf(),
+        /requires a manual reconnect/,
+      );
+
+      assert.equal(loginCalls, 1);
+      const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      assert.equal(cache.accounts["account-1"].requiresManualReconnect, true);
+      assert.equal(cache.accounts["account-1"].reconnectReason, "AUTH_REFRESH_COOKIE_MISSING");
     });
   } finally {
     globalThis.fetch = originalFetch;

@@ -165,7 +165,13 @@ export FOROPENCODE_USERNAME='your-username'
 export FOROPENCODE_PASSWORD='your-password'
 ```
 
-密码登录不会在每次同步时重新创建登录会话。首次成功登录后，同步器会把该账号的短期 Cookie/Token 写入本机 `work/auth-session-cache.json`，文件权限为 `600`，并按账号 ID、站点地址隔离；后续同步优先复用缓存会话，只有接口确认会话失效时才会重新登录。多个同步进程同时启动时会共享一个本地锁，避免并发登录触发网站的会话上限。
+为避免 New API 的 `AUTH_SESSION_LIMIT`，密码登录采用“明确连接一次、后续只刷新”的模式。首次建立会话时，需显式允许这一次密码登录：
+
+```bash
+FOROPENCODE_ALLOW_PASSWORD_LOGIN=1 npm run sync:publish
+```
+
+不要把 `FOROPENCODE_ALLOW_PASSWORD_LOGIN=1` 写入 `work/sync.env` 或后台循环的环境中。首次成功登录后，ForOpenCode 会签发短期访问令牌与仅用于续期的 `HttpOnly` 刷新 Cookie；同步器会将两者保存在权限为 `600` 的本机 `work/auth-session-cache.json`，并按账号 ID、站点地址隔离。访问令牌临近过期时，同步器调用 `/api/user/auth/refresh` 续期，不会再次提交账号密码，也不会额外创建服务端登录会话。多个同步进程共享本地锁，避免并发使用同一个轮换刷新 Cookie。
 
 如果需要让密码登录优先于已保存的浏览器 Cookie，可以配置：
 
@@ -173,11 +179,7 @@ export FOROPENCODE_PASSWORD='your-password'
 export FOROPENCODE_PREFER_PASSWORD_LOGIN='true'
 ```
 
-当网站返回 `AUTH_SESSION_LIMIT` 时，系统会进入默认 15 分钟登录冷却，不会每 5 分钟重复请求登录接口。可以在确认已退出其他网页登录会话后再重试；也可以调整：
-
-```bash
-export FOROPENCODE_LOGIN_COOLDOWN_SECONDS='900'
-```
+当网站返回 `AUTH_SESSION_LIMIT`、刷新会话被撤销，或本机没有可续期的旧缓存时，系统会停止自动密码登录并标记该账号需要“手动重新连接”，不会在后续周期反复撞击登录接口。请先在网站端结束不需要的登录会话，再在 macOS App 的“账号矩阵”中点击该账号的“重新连接”；该操作只清除本机认证缓存，并明确发起一次新的账号密码登录。
 
 这个会话缓存只适合本机或受信任的私有运行环境。不要把 `work/auth-session-cache.json` 上传到公开仓库，也不要把它放进公开 GitHub Actions 缓存。
 
@@ -240,7 +242,7 @@ bash scripts/build-macos-app.sh --open
 
 生成的 App 位于 `dist/Indus Usage Console.app`。首次使用时，在“控制设置”确认项目目录，再进入“账号矩阵”添加账号。App 只把非敏感账号元数据写入 Application Support，敏感凭据写入 Keychain；同步时通过 `SYNC_ENV_FILE` 生成权限为 `600` 的本地运行环境，并复用现有 Bash/Node 同步链路。
 
-App 默认优先使用账号密码登录，但不会每个同步周期重新登录。它会复用本地认证会话缓存；登录会话达到网站上限时会进入冷却并停止重复尝试。
+App 默认优先使用账号密码登录，但不会每个同步周期重新登录。它会复用本地认证会话缓存，并通过服务端刷新 Cookie 轮换短期令牌；如果服务端拒绝会话，App 会要求用户明确点击“重新连接”，而不是自动创建更多登录会话。
 
 如果希望让 Xcode 自动管理 WidgetKit 的签名，可以打开 `macos/IndusUsageConsole/IndusUsageConsole.xcodeproj`，分别选择 `IndusUsageConsole` 和 `IndusUsageWidget` Target，在 `Signing & Capabilities` 中勾选 `Automatically manage signing` 并选择 Team。之后可以运行：
 
@@ -297,8 +299,9 @@ WIDGET_PROVISIONING_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/�
 - `FOROPENCODE_USERNAME`
 - `FOROPENCODE_PASSWORD`
 - `FOROPENCODE_PREFER_PASSWORD_LOGIN`
+- `FOROPENCODE_ALLOW_PASSWORD_LOGIN`
+  仅用于一次人工建立密码会话。不要写入后台自动同步环境；macOS App 的“重新连接”按钮会按账号自动、安全地传递该权限。
 - `FOROPENCODE_TURNSTILE_TOKEN`
-- `FOROPENCODE_LOGIN_COOLDOWN_SECONDS`
 - `AUTH_SESSION_CACHE_FILE`
   默认是 `work/auth-session-cache.json`，只应指向本地、权限为 `600` 的忽略文件。
 - `USAGE_TIMEZONE`

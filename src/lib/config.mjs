@@ -155,6 +155,12 @@ function normalizeAccount(entry, index, defaults) {
         sourceAuth.preferPasswordLogin,
         defaults.preferPasswordLogin,
       ),
+      // Creating a password session is intentionally opt-in. Normal syncs
+      // may only reuse or refresh a session that was created deliberately.
+      allowPasswordLogin: resolveBoolean(
+        sourceAuth.allowPasswordLogin,
+        defaults.allowPasswordLogin,
+      ),
     },
   };
 }
@@ -186,6 +192,10 @@ function buildRuntimeAccounts(env, defaults) {
       env.FOROPENCODE_PREFER_PASSWORD_LOGIN,
       defaults.preferPasswordLogin,
     ),
+    allowPasswordLogin: resolveBoolean(
+      env.FOROPENCODE_ALLOW_PASSWORD_LOGIN,
+      defaults.allowPasswordLogin,
+    ),
   };
 
   const accounts = [
@@ -205,6 +215,10 @@ function buildRuntimeAccounts(env, defaults) {
           preferPasswordLogin: resolveBoolean(
             env.FOROPENCODE_ACCOUNT_1_PREFER_PASSWORD_LOGIN,
             legacyAuth.preferPasswordLogin,
+          ),
+          allowPasswordLogin: resolveBoolean(
+            env.FOROPENCODE_ACCOUNT_1_ALLOW_PASSWORD_LOGIN,
+            legacyAuth.allowPasswordLogin,
           ),
         },
       },
@@ -245,6 +259,10 @@ function buildRuntimeAccounts(env, defaults) {
               env.FOROPENCODE_ACCOUNT_2_PREFER_PASSWORD_LOGIN,
               legacyAuth.preferPasswordLogin,
             ),
+            allowPasswordLogin: resolveBoolean(
+              env.FOROPENCODE_ACCOUNT_2_ALLOW_PASSWORD_LOGIN,
+              legacyAuth.allowPasswordLogin,
+            ),
           },
         },
         1,
@@ -271,6 +289,10 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     env.FOROPENCODE_PREFER_PASSWORD_LOGIN,
     fileConfig.preferPasswordLogin,
   );
+  const allowPasswordLogin = resolveBoolean(
+    env.FOROPENCODE_ALLOW_PASSWORD_LOGIN,
+    fileConfig.allowPasswordLogin,
+  );
   const legacyAuth = {
     cookie: env.FOROPENCODE_COOKIE || "",
     authorization:
@@ -281,8 +303,14 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     password: env.FOROPENCODE_PASSWORD || "",
     turnstileToken: env.FOROPENCODE_TURNSTILE_TOKEN || "",
     preferPasswordLogin,
+    allowPasswordLogin,
   };
-  const accounts = buildRuntimeAccounts(env, { baseUrl, scope, preferPasswordLogin });
+  const accounts = buildRuntimeAccounts(env, {
+    baseUrl,
+    scope,
+    preferPasswordLogin,
+    allowPasswordLogin,
+  });
 
   return {
     cwd,

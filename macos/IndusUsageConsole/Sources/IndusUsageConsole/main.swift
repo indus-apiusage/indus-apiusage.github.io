@@ -650,7 +650,6 @@ final class ConsoleModel: ObservableObject {
     private var snapshotRefreshInFlight = false
     private var externalLoopPID: Int32?
     private var externalLoopProbeInFlight = false
-    private var initialAPIKeySyncScheduled = false
 
     var enabledAccounts: [AccountProfile] { accounts.filter(\.enabled) }
     var isLoopRunning: Bool { loopProcess?.isRunning == true || existingLoopPID != nil }
@@ -672,6 +671,9 @@ final class ConsoleModel: ObservableObject {
     var projectURL: URL { URL(fileURLWithPath: settings.projectPath) }
     var credentialsReady: Bool {
         secretsLoaded && !enabledAccounts.isEmpty && enabledAccounts.allSatisfy { hasCredentials(for: $0.id) }
+    }
+    var backgroundSyncReady: Bool {
+        credentialsReady && enabledAccounts.allSatisfy { hasReusableSession(for: $0) }
     }
 
     init() {
@@ -695,6 +697,11 @@ final class ConsoleModel: ObservableObject {
     func hasCredentials(for id: UUID) -> Bool {
         guard let secret = secrets[id] else { return false }
         return hasSessionCredentials(secret) || hasPasswordCredentials(secret)
+    }
+
+    func canReconnectPasswordSession(for id: UUID) -> Bool {
+        guard let secret = secrets[id] else { return false }
+        return hasPasswordCredentials(secret)
     }
 
     func balance(for index: Int) -> SnapshotAccount? {
@@ -827,6 +834,30 @@ final class ConsoleModel: ObservableObject {
         eventMessage = enabled ? "已启用该账号同步" : "已暂停该账号同步"
     }
 
+    func reconnectPasswordSession(for accountID: UUID) {
+        guard let profile = accounts.first(where: { $0.id == accountID }) else {
+            eventMessage = "找不到对应账号"
+            return
+        }
+        guard canReconnectPasswordSession(for: accountID) else {
+            eventMessage = "请先为该账号保存账号密码后再重新连接"
+            return
+        }
+        guard !isLoopRunning, onceProcess?.isRunning != true else {
+            eventMessage = "请先暂停自动同步，再为 \(profile.label) 重新连接"
+            return
+        }
+
+        do {
+            let runtimeAccountID = try runtimeAccountIdentifier(for: profile)
+            try clearCachedAuthSession(for: runtimeAccountID)
+            eventMessage = "已清除 \(profile.label) 的本机认证缓存，正在用账号密码建立一次新会话"
+            runOnce(allowPasswordLoginFor: Set([accountID]))
+        } catch {
+            eventMessage = "重新连接准备失败：\(error.localizedDescription)"
+        }
+    }
+
     func apiKeyCount(for id: UUID) -> Int {
         secrets[id]?.apiKeys.count ?? 0
     }
@@ -846,6 +877,10 @@ final class ConsoleModel: ObservableObject {
         }
         guard secretsLoaded, hasCredentials(for: accountID) else {
             if announce { eventMessage = "请先为该账号补充 Cookie/Bearer Token 或账号密码" }
+            return
+        }
+        guard hasReusableSession(for: profile) else {
+            if announce { eventMessage = "请先在账号矩阵中点击 \(profile.label) 的“重新连接”，再同步 API Key" }
             return
         }
 
@@ -1160,6 +1195,11 @@ final class ConsoleModel: ObservableObject {
             persistState()
             return
         }
+        guard backgroundSyncReady else {
+            phase = .idle
+            eventMessage = "请先在账号矩阵中为每个账号点击“重新连接”，建立一次可续期的密码会话"
+            return
+        }
         if let pid = existingLoopPID, !takeOverExternalLoop(pid) {
             phase = .failed
             eventMessage = "检测到无法确认来源的同步进程，请先在终端停止它"
@@ -1240,7 +1280,7 @@ final class ConsoleModel: ObservableObject {
         refreshRuntime()
     }
 
-    func runOnce() {
+    func runOnce(allowPasswordLoginFor: Set<UUID> = []) {
         guard onceProcess?.isRunning != true else { return }
         guard !isLoopRunning else {
             eventMessage = "自动同步正在运行，请等待当前周期结束"
@@ -1251,8 +1291,13 @@ final class ConsoleModel: ObservableObject {
             eventMessage = "请先为所有启用账号补充 Cookie/Bearer Token 或账号密码"
             return
         }
+        guard !allowPasswordLoginFor.isEmpty || backgroundSyncReady else {
+            phase = .idle
+            eventMessage = "请先在账号矩阵中点击“重新连接”，建立一次可续期的密码会话"
+            return
+        }
         do {
-            let envURL = try writeRuntimeEnvironment()
+            let envURL = try writeRuntimeEnvironment(allowPasswordLoginFor: allowPasswordLoginFor)
             let process = Process()
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/npm")
@@ -1441,7 +1486,7 @@ final class ConsoleModel: ObservableObject {
            loopProcess?.isRunning != true,
            onceProcess?.isRunning != true,
            existingLoopPID == nil,
-           credentialsReady,
+           backgroundSyncReady,
            phase != .failed,
            !autoStartScheduled {
             autoStartScheduled = true
@@ -1499,21 +1544,8 @@ final class ConsoleModel: ObservableObject {
                 }
                 self.secretsLoaded = true
                 self.refreshRuntime()
-                self.scheduleInitialAPIKeySync()
                 if self.settings.autoSync { self.startSync() }
             }
-        }
-    }
-
-    private func scheduleInitialAPIKeySync() {
-        guard !initialAPIKeySyncScheduled else { return }
-        initialAPIKeySyncScheduled = true
-        let accountIDs = accounts.compactMap { profile -> UUID? in
-            guard hasCredentials(for: profile.id), secrets[profile.id]?.apiKeys.isEmpty != false else { return nil }
-            return profile.id
-        }
-        for accountID in accountIDs {
-            syncRemoteAPIKeys(for: accountID, announce: false)
         }
     }
 
@@ -1529,11 +1561,14 @@ final class ConsoleModel: ObservableObject {
             .appendingPathComponent("IndusUsageConsole/state.json")
     }
 
-    private func writeRuntimeEnvironment() throws -> URL {
+    private func writeRuntimeEnvironment(allowPasswordLoginFor: Set<UUID> = []) throws -> URL {
         let workURL = projectURL.appendingPathComponent("work")
         try FileManager.default.createDirectory(at: workURL, withIntermediateDirectories: true)
         let envURL = workURL.appendingPathComponent("app-sync.env")
-        let runtimeAccounts = makeRuntimeAccounts(includeDisabled: false)
+        let runtimeAccounts = makeRuntimeAccounts(
+            includeDisabled: false,
+            allowPasswordLoginFor: allowPasswordLoginFor
+        )
         let json = try String(decoding: JSONEncoder().encode(runtimeAccounts), as: UTF8.self)
         var lines = ["export FOROPENCODE_ACCOUNTS_JSON=\(shellQuote(json))"]
         if !settings.proxy.isEmpty { lines.append("export FOROPENCODE_PROXY=\(shellQuote(settings.proxy))") }
@@ -1544,26 +1579,32 @@ final class ConsoleModel: ObservableObject {
         return envURL
     }
 
-    private func makeRuntimeAccounts(includeDisabled: Bool) -> [RuntimeAccount] {
+    private func makeRuntimeAccounts(
+        includeDisabled: Bool,
+        allowPasswordLoginFor: Set<UUID> = []
+    ) -> [RuntimeAccount] {
         let profiles = includeDisabled ? accounts : enabledAccounts
         return profiles.map { profile in
             let secret = secrets[profile.id] ?? AccountSecret()
             let stableIndex = accounts.firstIndex(where: { $0.id == profile.id }) ?? 0
+            let usesPasswordAuthentication = hasPasswordCredentials(secret)
             return RuntimeAccount(
                 id: "account-\(stableIndex + 1)",
                 label: profile.label.isEmpty ? profile.name : profile.label,
                 baseUrl: profile.baseURL,
                 scope: "self",
                 auth: RuntimeAuth(
-                    cookie: secret.cookie,
-                    authorization: secret.authorization,
+                    // Keep browser credentials out of the child process when
+                    // the account is configured for password authentication.
+                    cookie: usesPasswordAuthentication ? "" : secret.cookie,
+                    authorization: usesPasswordAuthentication ? "" : secret.authorization,
                     userId: profile.userID,
-                    // Password mode is preferred in the App. The Node client
-                    // persists the resulting session and reuses it across
-                    // cycles, so this does not create a login every 5 minutes.
+                    // A password session is created only by the reconnect
+                    // action. Background work may only reuse or refresh it.
                     username: secret.username,
                     password: secret.password,
-                    preferPasswordLogin: true
+                    preferPasswordLogin: usesPasswordAuthentication,
+                    allowPasswordLogin: usesPasswordAuthentication && allowPasswordLoginFor.contains(profile.id)
                 )
             )
         }
@@ -1577,6 +1618,30 @@ final class ConsoleModel: ObservableObject {
     private func hasPasswordCredentials(_ secret: AccountSecret) -> Bool {
         !secret.username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !secret.password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func hasReusableSession(for profile: AccountProfile) -> Bool {
+        guard let secret = secrets[profile.id] else { return false }
+        if !hasPasswordCredentials(secret) {
+            return hasSessionCredentials(secret)
+        }
+
+        guard let runtimeAccountID = try? runtimeAccountIdentifier(for: profile) else { return false }
+        let cacheURL = projectURL.appendingPathComponent("work/auth-session-cache.json")
+        guard let data = try? Data(contentsOf: cacheURL),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let accounts = payload["accounts"] as? [String: Any],
+              let entry = accounts[runtimeAccountID] as? [String: Any] else {
+            return false
+        }
+
+        let hasRefreshCookie = (entry["cookie"] as? String)?
+            .contains("new_api_refresh=") == true
+        let hasAccessToken = !(entry["authorization"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+        let requiresManualReconnect = entry["requiresManualReconnect"] as? Bool ?? false
+        return hasRefreshCookie && hasAccessToken && !requiresManualReconnect
     }
 
     private func processEnvironment(using envURL: URL) -> [String: String] {
@@ -1598,6 +1663,23 @@ final class ConsoleModel: ObservableObject {
             throw APIKeyCommandError.invalidResponse
         }
         return "account-\(index + 1)"
+    }
+
+    private func clearCachedAuthSession(for runtimeAccountID: String) throws {
+        let cacheURL = projectURL.appendingPathComponent("work/auth-session-cache.json")
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return }
+
+        let data = try Data(contentsOf: cacheURL)
+        guard var payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw APIKeyCommandError.invalidResponse
+        }
+        guard var accounts = payload["accounts"] as? [String: Any] else { return }
+
+        accounts.removeValue(forKey: runtimeAccountID)
+        payload["accounts"] = accounts
+        let updated = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+        try updated.write(to: cacheURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cacheURL.path)
     }
 
     private func apiKeyProcessEnvironment() throws -> [String: String] {
@@ -1786,6 +1868,7 @@ private struct RuntimeAuth: Encodable {
     var username: String
     var password: String
     var preferPasswordLogin: Bool
+    var allowPasswordLogin: Bool
 }
 
 IndusUsageConsoleApp.main()
