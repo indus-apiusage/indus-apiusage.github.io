@@ -574,6 +574,33 @@ enum SyncPhase: Equatable {
     }
 }
 
+// The loop reads its environment again between cycles, whereas one-off work
+// needs a disposable snapshot. Keeping them separate prevents a short task
+// from deleting credentials still needed by a running loop.
+private enum RuntimeEnvironmentPurpose {
+    case loop
+    case once
+    case reconnect
+
+    var fileName: String {
+        switch self {
+        case .loop:
+            return "app-sync-loop.env"
+        case .once:
+            return "app-sync-once-\(UUID().uuidString).env"
+        case .reconnect:
+            return "app-sync-reconnect-\(UUID().uuidString).env"
+        }
+    }
+}
+
+private struct PendingPasswordReconnect {
+    let profile: AccountProfile
+    let runtimeAccountID: String
+    let accountID: UUID
+    var resumeAutoSync: Bool
+}
+
 final class KeychainVault {
     private let service = "com.indus-apiusage.console.credentials"
 
@@ -639,6 +666,8 @@ final class ConsoleModel: ObservableObject {
     private var secrets: [UUID: AccountSecret] = [:]
     private var loopProcess: Process?
     private var onceProcess: Process?
+    private var loopRuntimeEnvironmentURL: URL?
+    private var pendingPasswordReconnect: PendingPasswordReconnect?
     private var ownsLoop = false
     private var autoStartScheduled = false
     private var stopRequested = false
@@ -787,9 +816,9 @@ final class ConsoleModel: ObservableObject {
             }
             persistState()
             let runtimeConfigRefreshed: Bool
-            if isLoopRunning {
+            if ownsLoop, loopProcess?.isRunning == true {
                 do {
-                    _ = try writeRuntimeEnvironment()
+                    _ = try writeLoopRuntimeEnvironment()
                     runtimeConfigRefreshed = true
                 } catch {
                     runtimeConfigRefreshed = false
@@ -823,15 +852,46 @@ final class ConsoleModel: ObservableObject {
         if let index = accounts.firstIndex(of: profile) { accounts.remove(at: index) }
         secrets.removeValue(forKey: profile.id)
         vault.delete(for: profile.id)
+        if enabledAccounts.isEmpty {
+            settings.autoSync = false
+        }
         persistState()
+        if enabledAccounts.isEmpty, isLoopRunning || activeExpectedLoopPID() != nil {
+            eventMessage = "已移除 \(profile.label)，没有可同步账号，正在停止同步"
+            stopSync()
+            return
+        }
+        refreshManagedLoopEnvironmentAfterAccountChange()
         eventMessage = "已移除 \(profile.label)"
     }
 
     func setEnabled(_ enabled: Bool, for id: UUID) {
         guard let index = accounts.firstIndex(where: { $0.id == id }) else { return }
         accounts[index].enabled = enabled
+        let hasEnabledAccounts = !enabledAccounts.isEmpty
+        if !hasEnabledAccounts {
+            settings.autoSync = false
+        }
         persistState()
-        eventMessage = enabled ? "已启用该账号同步" : "已暂停该账号同步"
+
+        guard hasEnabledAccounts else {
+            eventMessage = "所有账号同步已暂停，正在停止同步循环"
+            if isLoopRunning || activeExpectedLoopPID() != nil {
+                stopSync()
+            } else {
+                phase = .idle
+            }
+            return
+        }
+
+        let refreshed = refreshManagedLoopEnvironmentAfterAccountChange()
+        eventMessage = enabled
+            ? (refreshed ? "已启用该账号同步，下一周期将包含该账号" : "已启用该账号同步")
+            : (refreshed ? "已暂停该账号同步，下一周期将跳过该账号" : "已暂停该账号同步")
+
+        if enabled, settings.autoSync, !isLoopRunning {
+            startSync()
+        }
     }
 
     func reconnectPasswordSession(for accountID: UUID) {
@@ -843,21 +903,36 @@ final class ConsoleModel: ObservableObject {
             eventMessage = "请先为该账号保存账号密码后再重新连接"
             return
         }
-        guard !isLoopRunning, onceProcess?.isRunning != true else {
-            eventMessage = "请先暂停自动同步，再为 \(profile.label) 重新连接"
+        guard pendingPasswordReconnect == nil else {
+            eventMessage = "已有账号正在重新连接，请等待当前任务结束"
+            return
+        }
+        guard onceProcess?.isRunning != true else {
+            eventMessage = "当前单次任务尚未结束，正在等待后再重新连接"
             return
         }
 
         do {
             let runtimeAccountID = try runtimeAccountIdentifier(for: profile)
-            try clearCachedAuthSession(for: runtimeAccountID)
-            eventMessage = "已清除 \(profile.label) 的本机认证缓存，正在用账号密码建立一次新会话"
-            try runPasswordReconnect(
+            pendingPasswordReconnect = PendingPasswordReconnect(
                 profile: profile,
                 runtimeAccountID: runtimeAccountID,
-                accountID: accountID
+                accountID: accountID,
+                resumeAutoSync: settings.autoSync
             )
+            // Prevent the scheduler from starting another process while the
+            // old loop is being drained and the selected account reconnects.
+            settings.autoSync = false
+            persistState()
+
+            if isLoopRunning || activeExpectedLoopPID() != nil {
+                eventMessage = "正在安全暂停同步，并为 \(profile.label) 重新建立会话"
+                pauseLoopForPendingPasswordReconnect()
+            } else {
+                beginPendingPasswordReconnect()
+            }
         } catch {
+            pendingPasswordReconnect = nil
             eventMessage = "重新连接准备失败：\(error.localizedDescription)"
         }
     }
@@ -1149,6 +1224,19 @@ final class ConsoleModel: ObservableObject {
     }
 
     func setAutoSync(_ enabled: Bool) {
+        if var pending = pendingPasswordReconnect {
+            // Keep the reconnect isolated from scheduling. The user's new
+            // preference is applied after this one account has finished.
+            pending.resumeAutoSync = enabled
+            pendingPasswordReconnect = pending
+            settings.autoSync = false
+            persistState()
+            eventMessage = enabled
+                ? "将在账号重新连接成功后恢复自动同步"
+                : "账号重新连接完成后将保持自动同步关闭"
+            return
+        }
+
         settings.autoSync = enabled
         persistState()
         if enabled {
@@ -1168,18 +1256,13 @@ final class ConsoleModel: ObservableObject {
         settings.intervalMinutes = value
         persistState()
 
-        guard isLoopRunning else {
+        guard ownsLoop, loopProcess?.isRunning == true else {
             eventMessage = "同步间隔已设为每 \(value) 分钟"
             return
         }
 
-        guard loopProcess?.isRunning == true else {
-            eventMessage = "同步间隔已更新；请用 App 启动循环后生效"
-            return
-        }
-
         do {
-            _ = try writeRuntimeEnvironment()
+            _ = try writeLoopRuntimeEnvironment()
             eventMessage = "同步间隔已更新为每 \(value) 分钟，将在下一周期生效"
         } catch {
             eventMessage = "同步间隔已保存，但运行配置写入失败：\(error.localizedDescription)"
@@ -1188,6 +1271,14 @@ final class ConsoleModel: ObservableObject {
 
     func startSync() {
         guard loopProcess?.isRunning != true else { return }
+        guard pendingPasswordReconnect == nil else {
+            eventMessage = "正在完成账号重新连接，随后会按设置恢复自动同步"
+            return
+        }
+        guard onceProcess?.isRunning != true else {
+            eventMessage = "单次任务仍在运行，完成后再启动自动同步"
+            return
+        }
         guard !externalLoopProbeInFlight else {
             eventMessage = "正在检查已有同步进程，请稍候再启动"
             return
@@ -1204,18 +1295,25 @@ final class ConsoleModel: ObservableObject {
             eventMessage = "请先在账号矩阵中为每个账号点击“重新连接”，建立一次可续期的密码会话"
             return
         }
-        if let pid = existingLoopPID, !takeOverExternalLoop(pid) {
-            phase = .failed
-            eventMessage = "检测到无法确认来源的同步进程，请先在终端停止它"
-            return
+        if let pid = activeExpectedLoopPID() {
+            guard takeOverExternalLoop(pid) else {
+                phase = .failed
+                eventMessage = "检测到无法确认来源的同步进程，请先在终端停止它"
+                return
+            }
+            externalLoopPID = nil
         }
-        guard existingLoopPID == nil else {
+        guard activeExpectedLoopPID() == nil else {
             phase = .failed
             eventMessage = "旧同步进程尚未退出，请稍后重试"
             return
         }
+
+        var environmentURL: URL?
         do {
-            let envURL = try writeRuntimeEnvironment()
+            let envURL = try writeRuntimeEnvironment(purpose: .loop)
+            environmentURL = envURL
+            loopRuntimeEnvironmentURL = envURL
             let process = Process()
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -1234,15 +1332,27 @@ final class ConsoleModel: ObservableObject {
                 pipe.fileHandleForReading.readabilityHandler = nil
                 Task { @MainActor in
                     guard let self else { return }
+                    let wasStopRequested = self.stopRequested
                     self.loopProcess = nil
                     self.ownsLoop = false
-                    self.removeRuntimeEnvironment()
-                    if !self.stopRequested && process.terminationStatus != 0 {
+                    if self.loopRuntimeEnvironmentURL == envURL {
+                        self.loopRuntimeEnvironmentURL = nil
+                    }
+                    self.removeRuntimeEnvironment(at: envURL)
+
+                    if let pending = self.pendingPasswordReconnect {
+                        self.stopRequested = false
+                        self.beginPendingPasswordReconnect(pending)
+                    } else if !wasStopRequested && process.terminationStatus != 0 {
                         self.phase = .failed
                         self.eventMessage = "自动同步进程已退出（状态 \(process.terminationStatus)），请查看日志"
-                    } else if self.stopRequested {
+                    } else if wasStopRequested {
+                        self.phase = .idle
+                        self.eventMessage = "自动同步已暂停"
+                    } else {
                         self.phase = .idle
                     }
+                    self.stopRequested = false
                     self.refreshRuntime()
                 }
             }
@@ -1252,41 +1362,53 @@ final class ConsoleModel: ObservableObject {
             phase = .running
             eventMessage = "自动同步已启动，每 \(settings.intervalMinutes) 分钟检查一次"
         } catch {
-            removeRuntimeEnvironment()
+            removeRuntimeEnvironment(at: environmentURL)
+            if loopRuntimeEnvironmentURL == environmentURL {
+                loopRuntimeEnvironmentURL = nil
+            }
             phase = .failed
             eventMessage = "同步启动失败：\(error.localizedDescription)"
         }
     }
 
     func stopSync() {
-        guard !externalLoopProbeInFlight else {
-            eventMessage = "正在检查已有同步进程，请稍候再停止"
-            return
-        }
         if ownsLoop, let process = loopProcess, process.isRunning {
             stopRequested = true
             process.terminate()
-            loopProcess = nil
-            ownsLoop = false
-            phase = .idle
-            eventMessage = "自动同步已暂停"
-            removeRuntimeEnvironment()
+            phase = .running
+            eventMessage = "正在安全暂停自动同步"
             return
         }
 
-        if let pid = existingLoopPID, takeOverExternalLoop(pid) {
-            phase = .idle
-            eventMessage = "已停止旧的终端同步进程"
+        if let pid = activeExpectedLoopPID() {
+            if takeOverExternalLoop(pid) {
+                externalLoopPID = nil
+                phase = .idle
+                eventMessage = "已停止旧的终端同步进程"
+                return
+            }
+
+            phase = .failed
+            eventMessage = "无法确认或停止已有同步进程"
             return
         }
 
+        if existingLoopPID != nil {
+            // The PID file can outlive its process or be reused by macOS. It
+            // is never safe to block the UI on an unrelated process.
+            externalLoopPID = nil
+        }
         eventMessage = "当前没有可停止的同步进程"
         refreshRuntime()
     }
 
     func runOnce(allowPasswordLoginFor: Set<UUID> = []) {
         guard onceProcess?.isRunning != true else { return }
-        guard !isLoopRunning else {
+        guard pendingPasswordReconnect == nil else {
+            eventMessage = "账号重新连接中，请等待它结束后再执行单次同步"
+            return
+        }
+        guard !isLoopRunning, activeExpectedLoopPID() == nil else {
             eventMessage = "自动同步正在运行，请等待当前周期结束"
             return
         }
@@ -1300,8 +1422,14 @@ final class ConsoleModel: ObservableObject {
             eventMessage = "请先在账号矩阵中点击“重新连接”，建立一次可续期的密码会话"
             return
         }
+
+        var environmentURL: URL?
         do {
-            let envURL = try writeRuntimeEnvironment(allowPasswordLoginFor: allowPasswordLoginFor)
+            let envURL = try writeRuntimeEnvironment(
+                purpose: .once,
+                allowPasswordLoginFor: allowPasswordLoginFor
+            )
+            environmentURL = envURL
             let process = Process()
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/npm")
@@ -1323,7 +1451,7 @@ final class ConsoleModel: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     self.onceProcess = nil
-                    self.removeRuntimeEnvironment()
+                    self.removeRuntimeEnvironment(at: envURL)
                     self.refreshRuntime()
                     self.eventMessage = "单次同步任务已结束"
                 }
@@ -1333,20 +1461,66 @@ final class ConsoleModel: ObservableObject {
             phase = .running
             eventMessage = "正在执行一次同步并推送"
         } catch {
-            removeRuntimeEnvironment()
+            removeRuntimeEnvironment(at: environmentURL)
             phase = .failed
             eventMessage = "单次同步启动失败：\(error.localizedDescription)"
         }
     }
 
-    private func runPasswordReconnect(
-        profile: AccountProfile,
-        runtimeAccountID: String,
-        accountID: UUID
-    ) throws {
+    private func pauseLoopForPendingPasswordReconnect() {
+        guard pendingPasswordReconnect != nil else { return }
+
+        if ownsLoop, let process = loopProcess, process.isRunning {
+            stopRequested = true
+            process.terminate()
+            phase = .running
+            eventMessage = "正在等待当前同步循环完全停止"
+            return
+        }
+
+        if externalLoopProbeInFlight {
+            eventMessage = "正在确认同步进程状态，随后会继续重新连接"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.pauseLoopForPendingPasswordReconnect()
+            }
+            return
+        }
+
+        if let pid = activeExpectedLoopPID() {
+            guard takeOverExternalLoop(pid) else {
+                pendingPasswordReconnect = nil
+                phase = .failed
+                eventMessage = "无法停止已有同步进程；为避免并发登录，已取消重新连接"
+                return
+            }
+            externalLoopPID = nil
+        }
+
+        beginPendingPasswordReconnect()
+    }
+
+    private func beginPendingPasswordReconnect(_ request: PendingPasswordReconnect? = nil) {
+        guard let reconnect = request ?? pendingPasswordReconnect else { return }
+        guard onceProcess?.isRunning != true else {
+            eventMessage = "正在等待当前单次任务结束后重新连接"
+            return
+        }
+
+        do {
+            eventMessage = "正在为 \(reconnect.profile.label) 建立一次可续期的密码会话"
+            try runPasswordReconnect(reconnect)
+        } catch {
+            pendingPasswordReconnect = nil
+            phase = .failed
+            eventMessage = "重新连接启动失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func runPasswordReconnect(_ reconnect: PendingPasswordReconnect) throws {
         let envURL = try writeRuntimeEnvironment(
-            allowPasswordLoginFor: Set([accountID]),
-            accountIDs: Set([accountID])
+            purpose: .reconnect,
+            allowPasswordLoginFor: Set([reconnect.accountID]),
+            accountIDs: Set([reconnect.accountID])
         )
         let process = Process()
         let pipe = Pipe()
@@ -1354,7 +1528,7 @@ final class ConsoleModel: ObservableObject {
         process.arguments = [
             projectURL.appendingPathComponent("scripts/connect-account.sh").path,
             "--account-id",
-            runtimeAccountID,
+            reconnect.runtimeAccountID,
         ]
         process.currentDirectoryURL = projectURL
         process.environment = processEnvironment(using: envURL)
@@ -1370,18 +1544,34 @@ final class ConsoleModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.onceProcess = nil
-                self.removeRuntimeEnvironment()
+                self.removeRuntimeEnvironment(at: envURL)
+                let resumeAutoSync = self.pendingPasswordReconnect?.resumeAutoSync
+                    ?? reconnect.resumeAutoSync
+                self.pendingPasswordReconnect = nil
                 self.refreshRuntime()
                 if process.terminationStatus == 0 {
                     self.phase = .success
-                    self.eventMessage = "\(profile.label) 已建立可续期的密码会话"
+                    self.eventMessage = "\(reconnect.profile.label) 已建立可续期的密码会话"
+                    if resumeAutoSync, !self.enabledAccounts.isEmpty {
+                        self.settings.autoSync = true
+                        self.persistState()
+                        self.eventMessage = "\(reconnect.profile.label) 已重新连接，正在恢复自动同步"
+                        DispatchQueue.main.async { [weak self] in self?.startSync() }
+                    }
                 } else {
                     self.phase = .failed
-                    self.eventMessage = "\(profile.label) 重新连接失败（状态 \(process.terminationStatus)），请查看运行日志"
+                    self.settings.autoSync = false
+                    self.persistState()
+                    self.eventMessage = "\(reconnect.profile.label) 重新连接失败（状态 \(process.terminationStatus)），自动同步保持关闭，请查看运行日志"
                 }
             }
         }
-        try process.run()
+        do {
+            try process.run()
+        } catch {
+            removeRuntimeEnvironment(at: envURL)
+            throw error
+        }
         onceProcess = process
         phase = .running
     }
@@ -1471,7 +1661,12 @@ final class ConsoleModel: ObservableObject {
         let pidURL = projectURL.appendingPathComponent("work/sync-loop.pid")
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let pid = Self.readPIDFile(at: pidURL)
-            let activePID = pid.flatMap { kill($0, 0) == 0 ? $0 : nil }
+            let activePID = pid.flatMap { Self.isExpectedLoopProcess($0) ? $0 : nil }
+            if pid != nil, activePID == nil {
+                // The loop owns this PID file. Removing only a stale entry
+                // prevents a recycled macOS PID from blocking reconnects.
+                try? FileManager.default.removeItem(at: pidURL)
+            }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.externalLoopPID = activePID
@@ -1537,6 +1732,7 @@ final class ConsoleModel: ObservableObject {
            loopProcess?.isRunning != true,
            onceProcess?.isRunning != true,
            existingLoopPID == nil,
+           pendingPasswordReconnect == nil,
            backgroundSyncReady,
            phase != .failed,
            !autoStartScheduled {
@@ -1562,6 +1758,21 @@ final class ConsoleModel: ObservableObject {
         guard count > 0 else { return nil }
         let raw = String(decoding: buffer.prefix(count), as: UTF8.self)
         return Int32(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func activeExpectedLoopPID() -> Int32? {
+        if let knownPID = existingLoopPID, Self.isExpectedLoopProcess(knownPID) {
+            return knownPID
+        }
+
+        let pidURL = projectURL.appendingPathComponent("work/sync-loop.pid")
+        guard let pid = Self.readPIDFile(at: pidURL), Self.isExpectedLoopProcess(pid) else {
+            externalLoopPID = nil
+            return nil
+        }
+
+        externalLoopPID = pid
+        return pid
     }
 
     private func loadState() {
@@ -1613,12 +1824,13 @@ final class ConsoleModel: ObservableObject {
     }
 
     private func writeRuntimeEnvironment(
+        purpose: RuntimeEnvironmentPurpose,
         allowPasswordLoginFor: Set<UUID> = [],
         accountIDs: Set<UUID>? = nil
     ) throws -> URL {
         let workURL = projectURL.appendingPathComponent("work")
         try FileManager.default.createDirectory(at: workURL, withIntermediateDirectories: true)
-        let envURL = workURL.appendingPathComponent("app-sync.env")
+        let envURL = workURL.appendingPathComponent(purpose.fileName)
         let runtimeAccounts = makeRuntimeAccounts(
             includeDisabled: accountIDs != nil,
             accountIDs: accountIDs,
@@ -1632,6 +1844,23 @@ final class ConsoleModel: ObservableObject {
         try lines.joined(separator: "\n").appending("\n").write(to: envURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: envURL.path)
         return envURL
+    }
+
+    private func writeLoopRuntimeEnvironment() throws -> URL {
+        let envURL = try writeRuntimeEnvironment(purpose: .loop)
+        loopRuntimeEnvironmentURL = envURL
+        return envURL
+    }
+
+    @discardableResult
+    private func refreshManagedLoopEnvironmentAfterAccountChange() -> Bool {
+        guard ownsLoop, loopProcess?.isRunning == true else { return false }
+        do {
+            _ = try writeLoopRuntimeEnvironment()
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func makeRuntimeAccounts(
@@ -1663,7 +1892,11 @@ final class ConsoleModel: ObservableObject {
                     username: secret.username,
                     password: secret.password,
                     preferPasswordLogin: usesPasswordAuthentication,
-                    allowPasswordLogin: usesPasswordAuthentication && allowPasswordLoginFor.contains(profile.id)
+                    allowPasswordLogin: usesPasswordAuthentication && allowPasswordLoginFor.contains(profile.id),
+                    // A background retry is only permitted after the server
+                    // explicitly rejects a known refresh session. Node keeps
+                    // the cross-process lock and recovery cooldown.
+                    allowPasswordRecovery: usesPasswordAuthentication
                 )
             )
         }
@@ -1722,23 +1955,6 @@ final class ConsoleModel: ObservableObject {
             throw APIKeyCommandError.invalidResponse
         }
         return "account-\(index + 1)"
-    }
-
-    private func clearCachedAuthSession(for runtimeAccountID: String) throws {
-        let cacheURL = projectURL.appendingPathComponent("work/auth-session-cache.json")
-        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return }
-
-        let data = try Data(contentsOf: cacheURL)
-        guard var payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw APIKeyCommandError.invalidResponse
-        }
-        guard var accounts = payload["accounts"] as? [String: Any] else { return }
-
-        accounts.removeValue(forKey: runtimeAccountID)
-        payload["accounts"] = accounts
-        let updated = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
-        try updated.write(to: cacheURL, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cacheURL.path)
     }
 
     private func apiKeyProcessEnvironment() throws -> [String: String] {
@@ -1813,12 +2029,13 @@ final class ConsoleModel: ObservableObject {
         }
     }
 
-    private func removeRuntimeEnvironment() {
-        try? FileManager.default.removeItem(at: projectURL.appendingPathComponent("work/app-sync.env"))
+    private func removeRuntimeEnvironment(at url: URL?) {
+        guard let url else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     private func takeOverExternalLoop(_ pid: Int32) -> Bool {
-        guard isExpectedLoopProcess(pid) else { return false }
+        guard Self.isExpectedLoopProcess(pid) else { return false }
 
         eventMessage = "正在接管旧的终端同步进程"
         _ = kill(pid, SIGTERM)
@@ -1840,7 +2057,7 @@ final class ConsoleModel: ObservableObject {
         return externalLoopPID == nil
     }
 
-    private func isExpectedLoopProcess(_ pid: Int32) -> Bool {
+    nonisolated private static func isExpectedLoopProcess(_ pid: Int32) -> Bool {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -1928,6 +2145,7 @@ private struct RuntimeAuth: Encodable {
     var password: String
     var preferPasswordLogin: Bool
     var allowPasswordLogin: Bool
+    var allowPasswordRecovery: Bool
 }
 
 IndusUsageConsoleApp.main()

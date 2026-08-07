@@ -1670,7 +1670,7 @@ struct AccountDetailCard: View {
                         Label("重新连接", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .buttonStyle(GlassButtonStyle(tint: ConsolePalette.cyan))
-                    .help("仅清除本机认证缓存，并在下一次同步时用账号密码建立一个新会话")
+                    .help("会安全暂停当前同步，仅为该账号重新建立一次可续期会话；成功后按原设置恢复自动同步")
                 }
                 Button {
                     model.openTopUp(for: profile)

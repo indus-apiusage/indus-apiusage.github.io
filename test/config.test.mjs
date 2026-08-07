@@ -77,12 +77,14 @@ test("loadRuntimeConfig enables password session reuse without exposing a cache 
       FOROPENCODE_PASSWORD: "password",
       FOROPENCODE_PREFER_PASSWORD_LOGIN: "true",
       FOROPENCODE_ALLOW_PASSWORD_LOGIN: "true",
+      FOROPENCODE_ALLOW_PASSWORD_RECOVERY: "true",
     },
   });
 
     assert.equal(runtime.accounts[0].auth.username, "JunhaoCai");
     assert.equal(runtime.accounts[0].auth.preferPasswordLogin, true);
     assert.equal(runtime.accounts[0].auth.allowPasswordLogin, true);
+    assert.equal(runtime.accounts[0].auth.allowPasswordRecovery, true);
   assert.equal(runtime.sessionCacheFile, "work/auth-session-cache.json");
 });
 

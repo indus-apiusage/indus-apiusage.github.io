@@ -8,10 +8,11 @@ import { promisify } from "node:util";
 import { toNumber } from "./utils.mjs";
 
 const execFileAsync = promisify(execFile);
-const SESSION_CACHE_VERSION = 2;
+const SESSION_CACHE_VERSION = 3;
 const DEFAULT_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 90;
 const SESSION_LOCK_WAIT_MS = 5 * 60 * 1000;
 const SESSION_LOCK_STALE_MS = 10 * 60 * 1000;
+const AUTOMATIC_PASSWORD_RECOVERY_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const AUTH_REFRESH_PATH = "/api/user/auth/refresh";
 const REFRESH_COOKIE_NAME = "new_api_refresh";
 
@@ -196,9 +197,11 @@ export class ForApiClient {
     this.authorization = normalizeAuthorization(auth.authorization);
     this.preferPasswordLogin =
       Boolean(auth.preferPasswordLogin) && Boolean(auth.username) && Boolean(auth.password);
-    // Password login creates a server-side session. It is permitted only for
-    // an explicit reconnect action, never as an automatic recovery strategy.
+    // An explicit reconnect can create a session from scratch. Automatic
+    // recovery is narrower: it can only replace a known revoked refresh session.
     this.allowPasswordLogin = Boolean(auth.allowPasswordLogin);
+    this.allowPasswordRecovery =
+      Boolean(auth.allowPasswordRecovery) && this.preferPasswordLogin;
     const hasSuppliedSessionCredentials = this.cookies.size > 0 || Boolean(this.authorization);
 
     // The App can deliberately prefer password authentication while retaining
@@ -712,31 +715,82 @@ export class ForApiClient {
       .test(String(error?.message || error));
   }
 
-  passwordSessionRecoveryError() {
+  passwordSessionRecoveryError(reason = "") {
+    let detail = "Automatic password re-login is disabled for this recovery path to prevent AUTH_SESSION_LIMIT.";
+    if (reason === "AUTH_SESSION_LIMIT") {
+      detail = "The website reported AUTH_SESSION_LIMIT, so automatic password re-login is blocked to avoid creating more sessions.";
+    } else if (reason === "AUTH_AUTO_RECOVERY_COOLDOWN") {
+      detail = "Automatic password recovery was already attempted recently, so another password login is blocked to prevent a session loop.";
+    }
+
     return new Error(
-      "This account requires a manual reconnect. Automatic password re-login is disabled to prevent AUTH_SESSION_LIMIT. End unwanted website sessions first, then use the App's reconnect action.",
+      `This account requires a manual reconnect. ${detail} End unwanted website sessions first, then use the App's reconnect action.`,
     );
   }
 
-  manualReconnectEntry(reason) {
+  manualReconnectEntry(reason, previousEntry = {}) {
     return {
       baseUrl: this.baseUrl,
       userId: this.userId,
       usernameFingerprint: this.usernameFingerprint,
       cookie: "",
       authorization: "",
+      lastPasswordLoginAt: previousEntry.lastPasswordLoginAt,
+      lastAutomaticRecoveryAt: previousEntry.lastAutomaticRecoveryAt,
       requiresManualReconnect: true,
       reconnectReason: reason,
       reconnectRequiredAt: new Date().toISOString(),
     };
   }
 
-  async persistSession(cache) {
+  clearPasswordSession() {
+    this.cookies.clear();
+    this.authorization = "";
+    this.sessionId = "";
+    this.accessTokenExpiresAt = 0;
+    this.sessionFromCache = false;
+  }
+
+  isAutomaticPasswordRecoveryAllowed(entry) {
+    if (!this.allowPasswordRecovery || entry?.requiresManualReconnect) {
+      return false;
+    }
+
+    // A server-revoked refresh session is the one case where a replacement
+    // login is useful. Do not penalize a recent manual reconnect: it may have
+    // been invalidated immediately by the server. The cooldown applies to
+    // automated replacements only, so a broken endpoint can never create a
+    // password-login loop.
+    const lastAttempt = entry?.lastAutomaticRecoveryAt;
+    const timestamp = Date.parse(String(lastAttempt || ""));
+    return !Number.isFinite(timestamp) || Date.now() - timestamp >= AUTOMATIC_PASSWORD_RECOVERY_COOLDOWN_MS;
+  }
+
+  async persistSession(cache, { passwordLogin = false, automaticRecovery = false } = {}) {
     if (!this.sessionCacheFile || !this.accountId) {
       return;
     }
 
-    cache.accounts[this.accountId] = this.sessionEntry();
+    const previousEntry = cache.accounts[this.accountId] || {};
+    const entry = {
+      ...this.sessionEntry(),
+    };
+    const now = new Date().toISOString();
+
+    if (previousEntry.lastPasswordLoginAt) {
+      entry.lastPasswordLoginAt = previousEntry.lastPasswordLoginAt;
+    }
+    if (previousEntry.lastAutomaticRecoveryAt) {
+      entry.lastAutomaticRecoveryAt = previousEntry.lastAutomaticRecoveryAt;
+    }
+    if (passwordLogin) {
+      entry.lastPasswordLoginAt = now;
+    }
+    if (automaticRecovery) {
+      entry.lastAutomaticRecoveryAt = now;
+    }
+
+    cache.accounts[this.accountId] = entry;
     await this.writeSessionCache(cache);
   }
 
@@ -752,7 +806,7 @@ export class ForApiClient {
         return;
       }
 
-      cache.accounts[this.accountId] = this.manualReconnectEntry(reason);
+      cache.accounts[this.accountId] = this.manualReconnectEntry(reason, entry);
       await this.writeSessionCache(cache);
     });
   }
@@ -780,89 +834,125 @@ export class ForApiClient {
 
   async performPasswordSessionRefresh({ force }) {
     return this.withSessionCacheLock(async () => {
-        const cache = await this.readSessionCache();
-        const cachedEntry = cache.accounts[this.accountId];
+      const cache = await this.readSessionCache();
+      const cachedEntry = cache.accounts[this.accountId];
 
-        // Another local process may have rotated the one-time refresh cookie
-        // while this process waited on the shared cache lock. Reuse its fresh
-        // result instead of sending the old cookie again.
-        if (this.cachedSessionHasFreshAccessToken(cachedEntry)) {
-          this.applyCachedSession(cachedEntry);
-          return true;
+      // Another local process may have rotated the one-time refresh cookie
+      // while this process waited on the shared cache lock. Reuse its fresh
+      // result instead of sending the old cookie again.
+      if (this.cachedSessionHasFreshAccessToken(cachedEntry)) {
+        this.applyCachedSession(cachedEntry);
+        return true;
+      }
+
+      // A concurrent local request may have already found that this server
+      // session is no longer valid. Do not send its old rotating refresh
+      // cookie again after the shared lock becomes available.
+      if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
+        this.clearPasswordSession();
+        throw this.passwordSessionRecoveryError(cachedEntry?.reconnectReason);
+      }
+
+      if (
+        this.isUsableCachedSession(cachedEntry) &&
+        (cachedEntry.cookie !== this.cookieHeader || cachedEntry.authorization !== this.authorization)
+      ) {
+        this.applyCachedSession(cachedEntry);
+      }
+
+      if (!this.hasRefreshablePasswordSession()) {
+        return false;
+      }
+
+      if (!force && !this.accessTokenNeedsRefresh()) {
+        return false;
+      }
+
+      const refreshHeaders = {
+        Origin: this.baseUrl,
+      };
+      if (this.sessionId) {
+        refreshHeaders["X-Auth-Session"] = this.sessionId;
+      }
+
+      try {
+        const response = await this.requestJson(AUTH_REFRESH_PATH, {
+          method: "POST",
+          authRequired: false,
+          maxAttempts: 1,
+          extraHeaders: refreshHeaders,
+        });
+
+        if (!response?.success) {
+          const detail = [response?.code, response?.message]
+            .filter((value) => value !== undefined && value !== null && String(value).trim())
+            .map(String)
+            .join(": ") || "Session refresh failed.";
+          throw new Error(detail);
         }
 
-        // A concurrent local request may have already found that this server
-        // session is no longer valid. Do not send its old rotating refresh
-        // cookie again after the shared lock becomes available.
-        if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
-          this.cookies.clear();
-          this.authorization = "";
-          this.sessionId = "";
-          this.accessTokenExpiresAt = 0;
-          this.sessionFromCache = false;
-          throw this.passwordSessionRecoveryError();
+        this.applyAuthenticationResponse(response);
+        this.hasLoggedIn = false;
+        this.sessionFromCache = false;
+        this.sessionVersion += 1;
+        await this.persistSession(cache);
+        return true;
+      } catch (error) {
+        if (this.isSessionLimitError(error)) {
+          cache.accounts[this.accountId] = this.manualReconnectEntry("AUTH_SESSION_LIMIT", cachedEntry);
+          await this.writeSessionCache(cache);
+          this.clearPasswordSession();
+          throw this.passwordSessionRecoveryError("AUTH_SESSION_LIMIT");
         }
 
-        if (
-          this.isUsableCachedSession(cachedEntry) &&
-          (cachedEntry.cookie !== this.cookieHeader || cachedEntry.authorization !== this.authorization)
-        ) {
-          this.applyCachedSession(cachedEntry);
-        }
-
-        if (!this.hasRefreshablePasswordSession()) {
-          return false;
-        }
-
-        if (!force && !this.accessTokenNeedsRefresh()) {
-          return false;
-        }
-
-        const refreshHeaders = {
-          Origin: this.baseUrl,
-        };
-        if (this.sessionId) {
-          refreshHeaders["X-Auth-Session"] = this.sessionId;
-        }
-
-        try {
-          const response = await this.requestJson(AUTH_REFRESH_PATH, {
-            method: "POST",
-            authRequired: false,
-            maxAttempts: 1,
-            extraHeaders: refreshHeaders,
-          });
-
-          if (!response?.success) {
-            const detail = [response?.code, response?.message]
-              .filter((value) => value !== undefined && value !== null && String(value).trim())
-              .map(String)
-              .join(": ") || "Session refresh failed.";
-            throw new Error(detail);
-          }
-
-          this.applyAuthenticationResponse(response);
-          this.hasLoggedIn = false;
-          this.sessionFromCache = false;
-          this.sessionVersion += 1;
-          await this.persistSession(cache);
-          return true;
-        } catch (error) {
-          if (this.isRefreshSessionInvalidError(error) || this.isSessionLimitError(error)) {
-            const reason = this.isSessionLimitError(error)
-              ? "AUTH_SESSION_LIMIT"
-              : "AUTH_SESSION_REVOKED";
-            cache.accounts[this.accountId] = this.manualReconnectEntry(reason);
-            await this.writeSessionCache(cache);
-            this.cookies.clear();
-            this.authorization = "";
-            this.sessionId = "";
-            this.accessTokenExpiresAt = 0;
-            this.sessionFromCache = false;
-            throw this.passwordSessionRecoveryError();
-          }
+        if (!this.isRefreshSessionInvalidError(error)) {
           throw error;
         }
+
+        if (this.isAutomaticPasswordRecoveryAllowed(cachedEntry)) {
+          try {
+            await this.performPasswordLoginWithCache(cache, { automaticRecovery: true });
+            return true;
+          } catch (recoveryError) {
+            if (!this.isSessionLimitError(recoveryError)) {
+              cache.accounts[this.accountId] = this.manualReconnectEntry(
+                "AUTH_AUTO_RECOVERY_FAILED",
+                cachedEntry,
+              );
+              await this.writeSessionCache(cache);
+            }
+            this.clearPasswordSession();
+            throw recoveryError;
+          }
+        }
+
+        const reason = this.allowPasswordRecovery
+          ? "AUTH_AUTO_RECOVERY_COOLDOWN"
+          : "AUTH_SESSION_REVOKED";
+        cache.accounts[this.accountId] = this.manualReconnectEntry(reason, cachedEntry);
+        await this.writeSessionCache(cache);
+        this.clearPasswordSession();
+        throw this.passwordSessionRecoveryError(reason);
+      }
+    });
+  }
+
+  async recoverExpiredPasswordSessionWithoutRefreshCookie() {
+    return this.withSessionCacheLock(async () => {
+      const cache = await this.readSessionCache();
+      const cachedEntry = cache.accounts[this.accountId];
+
+      // There is no server-side evidence that the prior session was revoked
+      // when a cache only contains an expired access token. Do not turn this
+      // legacy state into a new login; it could add a second active session.
+      // Automatic recovery is reserved for an explicit failed refresh above.
+      cache.accounts[this.accountId] = this.manualReconnectEntry(
+        "AUTH_REFRESH_COOKIE_MISSING",
+        cachedEntry,
+      );
+      await this.writeSessionCache(cache);
+      this.clearPasswordSession();
+      throw this.passwordSessionRecoveryError("AUTH_REFRESH_COOKIE_MISSING");
     });
   }
 
@@ -1158,7 +1248,7 @@ export class ForApiClient {
     });
   }
 
-  async login() {
+  async login({ automaticRecovery = false } = {}) {
     if (this.loginPromise) {
       return this.loginPromise;
     }
@@ -1168,7 +1258,7 @@ export class ForApiClient {
       return;
     }
 
-    this.loginPromise = this.performLogin();
+    this.loginPromise = this.performLogin({ automaticRecovery });
     try {
       await this.loginPromise;
     } finally {
@@ -1176,7 +1266,29 @@ export class ForApiClient {
     }
   }
 
-  async performLogin() {
+  async reconnectWithPassword() {
+    if (!this.hasPasswordCredentials()) {
+      throw new Error(
+        "Missing authentication. Set FOROPENCODE_USERNAME and FOROPENCODE_PASSWORD before reconnecting.",
+      );
+    }
+    if (!this.allowPasswordLogin) {
+      throw new Error("Password reconnect was not explicitly approved for this account.");
+    }
+
+    this.passwordLoginAttempted = true;
+    return this.withSessionCacheLock(async () => {
+      const cache = await this.readSessionCache();
+      // Clear under the same cross-process lock used by refreshes. Swift does
+      // not touch this cache directly, so reconnect cannot race a token
+      // rotation from a loop that is still winding down.
+      delete cache.accounts[this.accountId];
+      this.clearPasswordSession();
+      await this.performPasswordLoginWithCache(cache, { forcePasswordLogin: true });
+    });
+  }
+
+  async performLogin({ automaticRecovery = false } = {}) {
     if (this.hasInitialSessionCredentials) {
       throw this.authenticationError(
         "/api/user/login",
@@ -1190,7 +1302,7 @@ export class ForApiClient {
       );
     }
 
-    if (!this.allowPasswordLogin) {
+    if (!this.allowPasswordLogin && !automaticRecovery) {
       await this.markPasswordSessionForManualReconnect("PASSWORD_LOGIN_NOT_APPROVED");
       throw this.passwordSessionRecoveryError();
     }
@@ -1198,63 +1310,78 @@ export class ForApiClient {
     this.passwordLoginAttempted = true;
     return this.withSessionCacheLock(async () => {
       const cache = await this.readSessionCache();
-      const cachedEntry = cache.accounts[this.accountId];
-
-      if (this.isUsableCachedSession(cachedEntry)) {
-        this.applyCachedSession(cachedEntry);
-        return;
-      }
-
-      if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
-        if (this.allowPasswordLogin) {
-          delete cache.accounts[this.accountId];
-          await this.writeSessionCache(cache);
-        } else if (!cachedEntry?.requiresManualReconnect) {
-          cache.accounts[this.accountId] = this.manualReconnectEntry("AUTH_SESSION_LIMIT");
-          await this.writeSessionCache(cache);
-          throw this.passwordSessionRecoveryError();
-        } else {
-          throw this.passwordSessionRecoveryError();
-        }
-      }
-
-      this.cookies.clear();
-      this.authorization = "";
-
-      const loginPath = `/api/user/login?turnstile=${encodeURIComponent(this.auth.turnstileToken || "")}`;
-      try {
-        const response = await this.requestJson(loginPath, {
-          method: "POST",
-          body: {
-            username: this.auth.username,
-            password: this.auth.password,
-          },
-          authRequired: false,
-        });
-
-        if (!response?.success) {
-          const detail = [response?.code, response?.message]
-            .filter((value) => value !== undefined && value !== null && String(value).trim())
-            .map(String)
-            .join(": ") || "Login failed.";
-          throw new Error(detail);
-        }
-
-        this.applyAuthenticationResponse(response);
-
-        this.hasLoggedIn = true;
-        this.sessionFromCache = false;
-        this.sessionVersion += 1;
-        await this.persistSession(cache);
-        this.passwordLoginAttempted = false;
-      } catch (error) {
-        if (this.isSessionLimitError(error)) {
-          cache.accounts[this.accountId] = this.manualReconnectEntry("AUTH_SESSION_LIMIT");
-          await this.writeSessionCache(cache);
-        }
-        throw error;
-      }
+      await this.performPasswordLoginWithCache(cache, { automaticRecovery });
     });
+  }
+
+  async performPasswordLoginWithCache(
+    cache,
+    { automaticRecovery = false, forcePasswordLogin = false } = {},
+  ) {
+    const cachedEntry = cache.accounts[this.accountId];
+
+    if (!automaticRecovery && !forcePasswordLogin && this.isUsableCachedSession(cachedEntry)) {
+      this.applyCachedSession(cachedEntry);
+      return;
+    }
+
+    if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
+      if (this.allowPasswordLogin && !automaticRecovery) {
+        delete cache.accounts[this.accountId];
+        await this.writeSessionCache(cache);
+      } else {
+        throw this.passwordSessionRecoveryError(cachedEntry?.reconnectReason);
+      }
+    }
+
+    if (automaticRecovery && !this.isAutomaticPasswordRecoveryAllowed(cachedEntry)) {
+      cache.accounts[this.accountId] = this.manualReconnectEntry(
+        "AUTH_AUTO_RECOVERY_COOLDOWN",
+        cachedEntry,
+      );
+      await this.writeSessionCache(cache);
+      throw this.passwordSessionRecoveryError("AUTH_AUTO_RECOVERY_COOLDOWN");
+    }
+
+    this.clearPasswordSession();
+    const loginPath = `/api/user/login?turnstile=${encodeURIComponent(this.auth.turnstileToken || "")}`;
+
+    try {
+      const response = await this.requestJson(loginPath, {
+        method: "POST",
+        body: {
+          username: this.auth.username,
+          password: this.auth.password,
+        },
+        authRequired: false,
+      });
+
+      if (!response?.success) {
+        const detail = [response?.code, response?.message]
+          .filter((value) => value !== undefined && value !== null && String(value).trim())
+          .map(String)
+          .join(": ") || "Login failed.";
+        throw new Error(detail);
+      }
+
+      this.applyAuthenticationResponse(response);
+      this.hasLoggedIn = true;
+      this.sessionFromCache = false;
+      this.sessionVersion += 1;
+      await this.persistSession(cache, {
+        passwordLogin: true,
+        automaticRecovery,
+      });
+      this.passwordLoginAttempted = false;
+    } catch (error) {
+      if (this.isSessionLimitError(error)) {
+        cache.accounts[this.accountId] = this.manualReconnectEntry("AUTH_SESSION_LIMIT", cachedEntry);
+        await this.writeSessionCache(cache);
+        this.clearPasswordSession();
+        throw this.passwordSessionRecoveryError("AUTH_SESSION_LIMIT");
+      }
+      throw error;
+    }
   }
 
   async ensureAuthenticated() {
@@ -1265,10 +1392,9 @@ export class ForApiClient {
       if (this.hasRefreshablePasswordSession() && this.accessTokenNeedsRefresh()) {
         await this.refreshPasswordSession();
       } else if (this.preferPasswordLogin && this.accessTokenIsExpired()) {
-        // A legacy cache created before refresh-cookie persistence cannot be
-        // renewed safely. Do not create another server login session here.
-        await this.markPasswordSessionForManualReconnect("AUTH_REFRESH_COOKIE_MISSING");
-        throw this.passwordSessionRecoveryError();
+        // Legacy password caches can be recovered once only when automatic
+        // recovery was explicitly enabled for the App-managed account.
+        await this.recoverExpiredPasswordSessionWithoutRefreshCookie();
       }
       return;
     }

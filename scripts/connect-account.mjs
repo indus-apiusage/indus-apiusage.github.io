@@ -34,8 +34,9 @@ async function main() {
   });
 
   // This deliberately creates one password session for the selected account
-  // only. It does not fetch usage data or publish a partial dashboard.
-  await client.ensureAuthenticated();
+  // only. It takes the same cache lock as refreshes before replacing a stale
+  // local session, so reconnect cannot race a loop that is winding down.
+  await client.reconnectWithPassword();
   await client.fetchSelf();
 
   if (!client.hasRefreshCookie()) {

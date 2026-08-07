@@ -179,7 +179,9 @@ FOROPENCODE_ALLOW_PASSWORD_LOGIN=1 npm run sync:publish
 export FOROPENCODE_PREFER_PASSWORD_LOGIN='true'
 ```
 
-当网站返回 `AUTH_SESSION_LIMIT`、刷新会话被撤销，或本机没有可续期的旧缓存时，系统会停止自动密码登录并标记该账号需要“手动重新连接”，不会在后续周期反复撞击登录接口。请先在网站端结束不需要的登录会话，再在 macOS App 的“账号矩阵”中点击该账号的“重新连接”；该操作只清除并重建所选账号的本机认证缓存，不会同步其他账号或发布不完整的仪表盘数据。
+默认情况下，刷新会话被撤销或本机没有可续期的旧缓存时，系统会停止自动密码登录并标记该账号需要“手动重新连接”。若已明确设置 `FOROPENCODE_ALLOW_PASSWORD_RECOVERY=true`，则只有在服务端明确拒绝一个已保存的刷新会话时，系统才会自动补建一次密码会话；该恢复由跨进程锁串行化，并有 6 小时冷却，绝不会作为首次登录或无 Cookie 缓存的回退路径。网站返回 `AUTH_SESSION_LIMIT` 时始终停止自动尝试，避免后续周期反复撞击登录接口。
+
+macOS App 会为使用账号密码的账号启用上述受限恢复策略。点击“重新连接”时，App 会安全暂停自身管理的循环，等待其完全退出后只重连所选账号；成功后按原自动同步开关恢复，失败或 `AUTH_SESSION_LIMIT` 时则保持同步关闭。请先在网站端结束不需要的登录会话，再重试该操作。
 
 这个会话缓存只适合本机或受信任的私有运行环境。不要把 `work/auth-session-cache.json` 上传到公开仓库，也不要把它放进公开 GitHub Actions 缓存。
 
@@ -244,7 +246,7 @@ bash scripts/build-macos-app.sh --open
 
 生成的 App 位于 `dist/Indus Usage Console.app`。首次使用时，在“控制设置”确认项目目录，再进入“账号矩阵”添加账号。App 只把非敏感账号元数据写入 Application Support，敏感凭据写入 Keychain；同步时通过 `SYNC_ENV_FILE` 生成权限为 `600` 的本地运行环境，并复用现有 Bash/Node 同步链路。
 
-App 默认优先使用账号密码登录，但不会每个同步周期重新登录。它会复用本地认证会话缓存，并通过服务端刷新 Cookie 轮换短期令牌；如果服务端拒绝会话，App 会要求用户明确点击“重新连接”，而不是自动创建更多登录会话。
+App 默认优先使用账号密码登录，但不会每个同步周期重新登录。它会复用本地认证会话缓存，并通过服务端刷新 Cookie 轮换短期令牌；只有服务端明确撤销一个已保存的刷新会话时，App 才会在本机锁和冷却保护下自动补建一次会话。遇到 `AUTH_SESSION_LIMIT` 时它会立即隔离该账号并停止自动登录。
 
 如果希望让 Xcode 自动管理 WidgetKit 的签名，可以打开 `macos/IndusUsageConsole/IndusUsageConsole.xcodeproj`，分别选择 `IndusUsageConsole` 和 `IndusUsageWidget` Target，在 `Signing & Capabilities` 中勾选 `Automatically manage signing` 并选择 Team。之后可以运行：
 
@@ -303,6 +305,8 @@ WIDGET_PROVISIONING_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/�
 - `FOROPENCODE_PREFER_PASSWORD_LOGIN`
 - `FOROPENCODE_ALLOW_PASSWORD_LOGIN`
   仅用于一次人工建立密码会话。不要写入后台自动同步环境；macOS App 的“重新连接”按钮会按账号自动、安全地传递该权限。
+- `FOROPENCODE_ALLOW_PASSWORD_RECOVERY`
+  可选。仅允许在一个已保存的刷新会话被服务端明确拒绝后自动补建一次密码会话；不会用于首次登录或缺少刷新 Cookie 的旧缓存，且每个账号有 6 小时自动恢复冷却。
 - `FOROPENCODE_TURNSTILE_TOKEN`
 - `AUTH_SESSION_CACHE_FILE`
   默认是 `work/auth-session-cache.json`，只应指向本地、权限为 `600` 的忽略文件。

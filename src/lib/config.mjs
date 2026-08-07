@@ -161,6 +161,12 @@ function normalizeAccount(entry, index, defaults) {
         sourceAuth.allowPasswordLogin,
         defaults.allowPasswordLogin,
       ),
+      // A background password login is only safe after an existing refresh
+      // session has been explicitly rejected. It is never a first-login path.
+      allowPasswordRecovery: resolveBoolean(
+        sourceAuth.allowPasswordRecovery,
+        defaults.allowPasswordRecovery,
+      ),
     },
   };
 }
@@ -196,6 +202,10 @@ function buildRuntimeAccounts(env, defaults) {
       env.FOROPENCODE_ALLOW_PASSWORD_LOGIN,
       defaults.allowPasswordLogin,
     ),
+    allowPasswordRecovery: resolveBoolean(
+      env.FOROPENCODE_ALLOW_PASSWORD_RECOVERY,
+      defaults.allowPasswordRecovery,
+    ),
   };
 
   const accounts = [
@@ -219,6 +229,10 @@ function buildRuntimeAccounts(env, defaults) {
           allowPasswordLogin: resolveBoolean(
             env.FOROPENCODE_ACCOUNT_1_ALLOW_PASSWORD_LOGIN,
             legacyAuth.allowPasswordLogin,
+          ),
+          allowPasswordRecovery: resolveBoolean(
+            env.FOROPENCODE_ACCOUNT_1_ALLOW_PASSWORD_RECOVERY,
+            legacyAuth.allowPasswordRecovery,
           ),
         },
       },
@@ -263,6 +277,10 @@ function buildRuntimeAccounts(env, defaults) {
               env.FOROPENCODE_ACCOUNT_2_ALLOW_PASSWORD_LOGIN,
               legacyAuth.allowPasswordLogin,
             ),
+            allowPasswordRecovery: resolveBoolean(
+              env.FOROPENCODE_ACCOUNT_2_ALLOW_PASSWORD_RECOVERY,
+              legacyAuth.allowPasswordRecovery,
+            ),
           },
         },
         1,
@@ -293,6 +311,10 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     env.FOROPENCODE_ALLOW_PASSWORD_LOGIN,
     fileConfig.allowPasswordLogin,
   );
+  const allowPasswordRecovery = resolveBoolean(
+    env.FOROPENCODE_ALLOW_PASSWORD_RECOVERY,
+    fileConfig.allowPasswordRecovery,
+  );
   const legacyAuth = {
     cookie: env.FOROPENCODE_COOKIE || "",
     authorization:
@@ -304,12 +326,14 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     turnstileToken: env.FOROPENCODE_TURNSTILE_TOKEN || "",
     preferPasswordLogin,
     allowPasswordLogin,
+    allowPasswordRecovery,
   };
   const accounts = buildRuntimeAccounts(env, {
     baseUrl,
     scope,
     preferPasswordLogin,
     allowPasswordLogin,
+    allowPasswordRecovery,
   });
 
   return {
