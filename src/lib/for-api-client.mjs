@@ -672,6 +672,17 @@ export class ForApiClient {
     return true;
   }
 
+  async isAutomaticRecoveryCooldownReady() {
+    if (!this.allowPasswordRecovery || !this.sessionCacheFile || !this.accountId) {
+      return false;
+    }
+
+    const cache = await this.readSessionCache();
+    const entry = cache.accounts[this.accountId];
+    return entry?.reconnectReason === "AUTH_AUTO_RECOVERY_COOLDOWN" &&
+      this.isAutomaticPasswordRecoveryAllowed(entry);
+  }
+
   sessionEntry() {
     return {
       baseUrl: this.baseUrl,
@@ -721,6 +732,14 @@ export class ForApiClient {
       detail = "The website reported AUTH_SESSION_LIMIT, so automatic password re-login is blocked to avoid creating more sessions.";
     } else if (reason === "AUTH_AUTO_RECOVERY_COOLDOWN") {
       detail = "Automatic password recovery was already attempted recently, so another password login is blocked to prevent a session loop.";
+    } else if (reason === "AUTH_REFRESH_COOKIE_MISSING") {
+      detail = "The cached password session has no refresh Cookie, so automatic recovery is disabled because the server has not confirmed that the old session was revoked.";
+    } else if (reason === "AUTH_AUTO_RECOVERY_FAILED") {
+      detail = "The last automatic password recovery failed for a reason other than AUTH_SESSION_LIMIT; automatic retries are paused until you reconnect explicitly.";
+    } else if (reason === "AUTH_SESSION_REVOKED") {
+      detail = "The server rejected the cached refresh session, but automatic password recovery is not enabled for this account.";
+    } else if (reason === "PASSWORD_LOGIN_NOT_APPROVED") {
+      detail = "Background password login is not approved for this account; use the App's reconnect action to approve one login.";
     }
 
     return new Error(
@@ -752,7 +771,8 @@ export class ForApiClient {
   }
 
   isAutomaticPasswordRecoveryAllowed(entry) {
-    if (!this.allowPasswordRecovery || entry?.requiresManualReconnect) {
+    const isTemporaryCooldown = entry?.reconnectReason === "AUTH_AUTO_RECOVERY_COOLDOWN";
+    if (!this.allowPasswordRecovery || (entry?.requiresManualReconnect && !isTemporaryCooldown)) {
       return false;
     }
 
@@ -796,18 +816,19 @@ export class ForApiClient {
 
   async markPasswordSessionForManualReconnect(reason) {
     if (!this.sessionCacheFile || !this.accountId) {
-      return;
+      return reason;
     }
 
-    await this.withSessionCacheLock(async () => {
+    return this.withSessionCacheLock(async () => {
       const cache = await this.readSessionCache();
       const entry = cache.accounts[this.accountId];
       if (entry?.requiresManualReconnect) {
-        return;
+        return entry.reconnectReason || reason;
       }
 
       cache.accounts[this.accountId] = this.manualReconnectEntry(reason, entry);
       await this.writeSessionCache(cache);
+      return reason;
     });
   }
 
@@ -849,6 +870,13 @@ export class ForApiClient {
       // session is no longer valid. Do not send its old rotating refresh
       // cookie again after the shared lock becomes available.
       if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
+        if (
+          cachedEntry.reconnectReason === "AUTH_AUTO_RECOVERY_COOLDOWN" &&
+          this.isAutomaticPasswordRecoveryAllowed(cachedEntry)
+        ) {
+          await this.performPasswordLoginWithCache(cache, { automaticRecovery: true });
+          return true;
+        }
         this.clearPasswordSession();
         throw this.passwordSessionRecoveryError(cachedEntry?.reconnectReason);
       }
@@ -943,9 +971,10 @@ export class ForApiClient {
       const cachedEntry = cache.accounts[this.accountId];
 
       // There is no server-side evidence that the prior session was revoked
-      // when a cache only contains an expired access token. Do not turn this
-      // legacy state into a new login; it could add a second active session.
-      // Automatic recovery is reserved for an explicit failed refresh above.
+      // when a cache only contains an expired access token. Quarantine this
+      // legacy state instead of logging in again; doing so could add a second
+      // active session. Automatic recovery is reserved for an explicit failed
+      // refresh above.
       cache.accounts[this.accountId] = this.manualReconnectEntry(
         "AUTH_REFRESH_COOKIE_MISSING",
         cachedEntry,
@@ -1319,6 +1348,9 @@ export class ForApiClient {
     { automaticRecovery = false, forcePasswordLogin = false } = {},
   ) {
     const cachedEntry = cache.accounts[this.accountId];
+    const cooldownRecoveryAllowed = automaticRecovery &&
+      cachedEntry?.reconnectReason === "AUTH_AUTO_RECOVERY_COOLDOWN" &&
+      this.isAutomaticPasswordRecoveryAllowed(cachedEntry);
 
     if (!automaticRecovery && !forcePasswordLogin && this.isUsableCachedSession(cachedEntry)) {
       this.applyCachedSession(cachedEntry);
@@ -1326,7 +1358,7 @@ export class ForApiClient {
     }
 
     if (cachedEntry?.requiresManualReconnect || cachedEntry?.loginBlockedReason === "AUTH_SESSION_LIMIT") {
-      if (this.allowPasswordLogin && !automaticRecovery) {
+      if ((this.allowPasswordLogin && !automaticRecovery) || cooldownRecoveryAllowed) {
         delete cache.accounts[this.accountId];
         await this.writeSessionCache(cache);
       } else {
@@ -1334,7 +1366,7 @@ export class ForApiClient {
       }
     }
 
-    if (automaticRecovery && !this.isAutomaticPasswordRecoveryAllowed(cachedEntry)) {
+    if (automaticRecovery && !cooldownRecoveryAllowed && !this.isAutomaticPasswordRecoveryAllowed(cachedEntry)) {
       cache.accounts[this.accountId] = this.manualReconnectEntry(
         "AUTH_AUTO_RECOVERY_COOLDOWN",
         cachedEntry,
@@ -1380,6 +1412,13 @@ export class ForApiClient {
         this.clearPasswordSession();
         throw this.passwordSessionRecoveryError("AUTH_SESSION_LIMIT");
       }
+      if (automaticRecovery) {
+        cache.accounts[this.accountId] = this.manualReconnectEntry(
+          "AUTH_AUTO_RECOVERY_FAILED",
+          cachedEntry,
+        );
+        await this.writeSessionCache(cache);
+      }
       throw error;
     }
   }
@@ -1405,9 +1444,13 @@ export class ForApiClient {
     }
 
     if (this.hasPasswordCredentials()) {
+      if (await this.isAutomaticRecoveryCooldownReady()) {
+        await this.login({ automaticRecovery: true });
+        return;
+      }
       if (!this.allowPasswordLogin) {
-        await this.markPasswordSessionForManualReconnect("PASSWORD_LOGIN_NOT_APPROVED");
-        throw this.passwordSessionRecoveryError();
+        const reason = await this.markPasswordSessionForManualReconnect("PASSWORD_LOGIN_NOT_APPROVED");
+        throw this.passwordSessionRecoveryError(reason);
       }
       await this.login();
       return;

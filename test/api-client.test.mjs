@@ -675,7 +675,7 @@ test("ForApiClient stops concurrent refreshes after a session is revoked", async
 
       assert.ok(outcomes.every((outcome) => outcome.status === "rejected"));
       assert.ok(outcomes.every((outcome) =>
-        /Automatic password re-login is disabled/.test(String(outcome.reason?.message || "")),
+        /server rejected the cached refresh session/.test(String(outcome.reason?.message || "")),
       ));
 
       assert.equal(loginCalls, 1);
@@ -749,6 +749,61 @@ test("ForApiClient quarantines legacy password caches that lack a refresh cookie
       const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
       assert.equal(cache.accounts["account-1"].requiresManualReconnect, true);
       assert.equal(cache.accounts["account-1"].reconnectReason, "AUTH_REFRESH_COOKIE_MISSING");
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ForApiClient preserves an existing recovery reason in the reconnect error", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-recovery-reason-"));
+  const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
+  const originalFetch = globalThis.fetch;
+
+  await fs.writeFile(sessionCacheFile, `${JSON.stringify({
+    version: 3,
+    accounts: {
+      "account-1": {
+        baseUrl: "http://example.test",
+        cookie: "",
+        authorization: "",
+        requiresManualReconnect: true,
+        reconnectReason: "AUTH_AUTO_RECOVERY_FAILED",
+        reconnectRequiredAt: new Date().toISOString(),
+      },
+    },
+  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    return mockJsonResponse(500, { message: "unexpected request" });
+  };
+
+  try {
+    await withNoProxy(async () => {
+      const client = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: {
+          username: "JunhaoCai",
+          password: "password",
+          preferPasswordLogin: true,
+          allowPasswordRecovery: true,
+          allowPasswordLogin: false,
+        },
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+
+      await assert.rejects(
+        () => client.ensureAuthenticated(),
+        /last automatic password recovery failed for a reason other than AUTH_SESSION_LIMIT/,
+      );
+      assert.equal(requestCount, 0);
+
+      const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      assert.equal(cache.accounts["account-1"].reconnectReason, "AUTH_AUTO_RECOVERY_FAILED");
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -1027,6 +1082,106 @@ test("ForApiClient does not repeat automatic recovery during its cooldown", asyn
       const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
       assert.equal(cache.accounts["account-1"].requiresManualReconnect, true);
       assert.equal(cache.accounts["account-1"].reconnectReason, "AUTH_AUTO_RECOVERY_COOLDOWN");
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ForApiClient retries a temporary recovery quarantine after the cooldown", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-cooldown-retry-"));
+  const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
+  const originalFetch = globalThis.fetch;
+  const now = Math.floor(Date.now() / 1000);
+  const initialToken = makeAccessToken({ sid: "retry-session", expiresAt: now + 30 });
+  const recoveredToken = makeAccessToken({ sid: "retry-session-one", expiresAt: now + 900 });
+  const resumedToken = makeAccessToken({ sid: "retry-session-two", expiresAt: now + 900 });
+  let loginCalls = 0;
+  let refreshCalls = 0;
+
+  globalThis.fetch = async (url) => {
+    const pathName = new URL(String(url)).pathname;
+    if (pathName === "/api/user/login") {
+      loginCalls += 1;
+      const token = [initialToken, recoveredToken, resumedToken][loginCalls - 1];
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: token,
+          access_expires_at: loginCalls === 1 ? now + 30 : now + 900,
+          user: { id: 1143 },
+          session: { sid: `retry-session-${loginCalls}` },
+        },
+      }, {
+        setCookies: [`new_api_refresh=retry-refresh-${loginCalls}; Path=/api/user/auth; HttpOnly`],
+      });
+    }
+
+    if (pathName === "/api/user/auth/refresh") {
+      refreshCalls += 1;
+      return mockJsonResponse(401, {
+        success: false,
+        code: "AUTH_SESSION_REVOKED",
+        message: "Unauthorized",
+      });
+    }
+
+    return mockJsonResponse(200, { success: true, data: {} });
+  };
+
+  try {
+    await withNoProxy(async () => {
+      const initialAuth = {
+        username: "JunhaoCai",
+        password: "password",
+        preferPasswordLogin: true,
+        allowPasswordLogin: true,
+        allowPasswordRecovery: true,
+      };
+      const firstClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: initialAuth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await firstClient.ensureAuthenticated();
+
+      const backgroundAuth = { ...initialAuth, allowPasswordLogin: false };
+      const secondClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: backgroundAuth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await secondClient.fetchSelf();
+      assert.equal(loginCalls, 2);
+
+      const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      const oldAttempt = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+      cache.accounts["account-1"] = {
+        ...cache.accounts["account-1"],
+        cookie: "",
+        authorization: "",
+        requiresManualReconnect: true,
+        reconnectReason: "AUTH_AUTO_RECOVERY_COOLDOWN",
+        lastAutomaticRecoveryAt: oldAttempt,
+      };
+      await fs.writeFile(sessionCacheFile, `${JSON.stringify(cache, null, 2)}\n`, { mode: 0o600 });
+
+      const thirdClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: backgroundAuth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await thirdClient.fetchSelf();
+
+      assert.equal(loginCalls, 3);
+      assert.equal(refreshCalls, 1);
+      assert.equal(thirdClient.authorization, `Bearer ${resumedToken}`);
+      const resumedCache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      assert.equal(resumedCache.accounts["account-1"].requiresManualReconnect, undefined);
     });
   } finally {
     globalThis.fetch = originalFetch;
