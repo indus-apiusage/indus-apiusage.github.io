@@ -702,7 +702,7 @@ final class ConsoleModel: ObservableObject {
         secretsLoaded && !enabledAccounts.isEmpty && enabledAccounts.allSatisfy { hasCredentials(for: $0.id) }
     }
     var backgroundSyncReady: Bool {
-        credentialsReady && enabledAccounts.allSatisfy { hasReusableSession(for: $0) }
+        credentialsReady && enabledAccounts.allSatisfy { hasBackgroundRecoveryPath(for: $0) }
     }
 
     init() {
@@ -1912,20 +1912,25 @@ final class ConsoleModel: ObservableObject {
             !secret.password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private func cachedPasswordSessionEntry(for profile: AccountProfile) -> [String: Any]? {
+        guard let runtimeAccountID = try? runtimeAccountIdentifier(for: profile) else { return nil }
+        let cacheURL = projectURL.appendingPathComponent("work/auth-session-cache.json")
+        guard let data = try? Data(contentsOf: cacheURL),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let accounts = payload["accounts"] as? [String: Any],
+              let entry = accounts[runtimeAccountID] as? [String: Any] else {
+            return nil
+        }
+        return entry
+    }
+
     private func hasReusableSession(for profile: AccountProfile) -> Bool {
         guard let secret = secrets[profile.id] else { return false }
         if !hasPasswordCredentials(secret) {
             return hasSessionCredentials(secret)
         }
 
-        guard let runtimeAccountID = try? runtimeAccountIdentifier(for: profile) else { return false }
-        let cacheURL = projectURL.appendingPathComponent("work/auth-session-cache.json")
-        guard let data = try? Data(contentsOf: cacheURL),
-              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let accounts = payload["accounts"] as? [String: Any],
-              let entry = accounts[runtimeAccountID] as? [String: Any] else {
-            return false
-        }
+        guard let entry = cachedPasswordSessionEntry(for: profile) else { return false }
 
         let hasRefreshCookie = (entry["cookie"] as? String)?
             .contains("new_api_refresh=") == true
@@ -1934,6 +1939,22 @@ final class ConsoleModel: ObservableObject {
             .isEmpty
         let requiresManualReconnect = entry["requiresManualReconnect"] as? Bool ?? false
         return hasRefreshCookie && hasAccessToken && !requiresManualReconnect
+    }
+
+    private func hasBackgroundRecoveryPath(for profile: AccountProfile) -> Bool {
+        guard let secret = secrets[profile.id] else { return false }
+        if !hasPasswordCredentials(secret) {
+            return hasSessionCredentials(secret)
+        }
+        if hasReusableSession(for: profile) {
+            return true
+        }
+
+        // A cooldown is not a manual-reconnect state. Node will retry this
+        // account with bounded backoff, so restarting the App must not block
+        // its managed loop before that scheduled recovery can happen.
+        let reason = cachedPasswordSessionEntry(for: profile)?["reconnectReason"] as? String
+        return reason == "AUTH_AUTO_RECOVERY_COOLDOWN"
     }
 
     private func processEnvironment(using envURL: URL) -> [String: String] {

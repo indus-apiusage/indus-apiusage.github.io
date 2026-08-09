@@ -105,6 +105,36 @@ log_message() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG_FILE"
 }
 
+automatic_recovery_wait_seconds() {
+  AUTH_SESSION_CACHE_FILE="${ROOT_DIR}/work/auth-session-cache.json" node 2>/dev/null <<'NODE' || printf '0'
+const fs = require("fs");
+
+const baseCooldownMs = 15 * 60 * 1000;
+const maxCooldownMs = 6 * 60 * 60 * 1000;
+let waitMs = 0;
+
+try {
+  const cache = JSON.parse(fs.readFileSync(process.env.AUTH_SESSION_CACHE_FILE, "utf8"));
+  for (const entry of Object.values(cache?.accounts || {})) {
+    if (entry?.reconnectReason !== "AUTH_AUTO_RECOVERY_COOLDOWN") continue;
+
+    const lastAttempt = Date.parse(String(entry.lastAutomaticRecoveryAt || ""));
+    if (!Number.isFinite(lastAttempt)) continue;
+
+    const storedAttempts = Number(entry.automaticRecoveryAttempts);
+    const attempts = Number.isInteger(storedAttempts) && storedAttempts > 0 ? storedAttempts : 1;
+    const cooldownMs = Math.min(baseCooldownMs * (2 ** Math.max(0, attempts - 1)), maxCooldownMs);
+    waitMs = Math.max(waitMs, lastAttempt + cooldownMs - Date.now());
+  }
+} catch {
+  // A concurrent cache rotation can leave a brief partial read. The normal
+  // interval handles that case without exposing any credential data.
+}
+
+process.stdout.write(String(Math.max(0, Math.ceil(waitMs / 1000))));
+NODE
+}
+
 run_child() {
   "$@" &
   ACTIVE_CHILD_PID=$!
@@ -186,6 +216,12 @@ while true; do
     if run_child bash "${ROOT_DIR}/scripts/run-local-sync.sh" >>"$LOG_FILE" 2>&1; then
       log_message "Sync cycle finished"
     else
+      recovery_wait_seconds="$(automatic_recovery_wait_seconds)"
+      if [[ "$recovery_wait_seconds" =~ ^[1-9][0-9]*$ ]] && [ "$recovery_wait_seconds" -gt "$SYNC_INTERVAL_SECONDS" ]; then
+        log_message "Automatic password recovery is queued; deferring the next cycle for ${recovery_wait_seconds} second(s)."
+        run_child sleep "$recovery_wait_seconds" || exit 0
+        continue
+      fi
       log_message "Sync cycle failed"
     fi
   else

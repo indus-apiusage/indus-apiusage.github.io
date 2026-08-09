@@ -12,7 +12,9 @@ const SESSION_CACHE_VERSION = 3;
 const DEFAULT_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 90;
 const SESSION_LOCK_WAIT_MS = 5 * 60 * 1000;
 const SESSION_LOCK_STALE_MS = 10 * 60 * 1000;
-const AUTOMATIC_PASSWORD_RECOVERY_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const AUTOMATIC_PASSWORD_RECOVERY_BASE_COOLDOWN_MS = 15 * 60 * 1000;
+const AUTOMATIC_PASSWORD_RECOVERY_MAX_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const REFRESH_RACE_RETRY_DELAYS_MS = [80, 200, 500];
 const AUTH_REFRESH_PATH = "/api/user/auth/refresh";
 const REFRESH_COOKIE_NAME = "new_api_refresh";
 
@@ -307,13 +309,17 @@ export class ForApiClient {
     try {
       for (const variant of variants) {
         try {
+          // curl's cookie engine owns the Cookie header so a refreshed cookie
+          // cannot be sent twice through both --cookie and --header.
+          const curlHeaders = { ...headers };
+          delete curlHeaders.Cookie;
           const { stdout } = await execFileAsync(
             "curl",
             buildCurlArgs({
               url,
               method,
               bodyFile,
-              headers,
+              headers: curlHeaders,
               cookieFile,
               proxyUrl: variant.proxyUrl,
               forceHttp11: variant.forceHttp11,
@@ -721,17 +727,60 @@ export class ForApiClient {
     return /AUTH_SESSION_LIMIT/i.test(String(error?.message || error));
   }
 
+  isRefreshRaceError(error) {
+    return /AUTH_REFRESH_RACE/i.test(String(error?.message || error));
+  }
+
+  isRefreshSessionMismatchError(error) {
+    return /AUTH_SESSION_MISMATCH/i.test(String(error?.message || error));
+  }
+
   isRefreshSessionInvalidError(error) {
-    return /AUTH_(?:UNAUTHORIZED|SESSION_REVOKED|SESSION_MISMATCH|REFRESH_RACE|TOKEN_EXPIRED)/i
+    return /AUTH_(?:UNAUTHORIZED|SESSION_REVOKED|TOKEN_EXPIRED)/i
       .test(String(error?.message || error));
   }
 
-  passwordSessionRecoveryError(reason = "") {
+  automaticRecoveryAttemptCount(entry) {
+    const attempts = Number(entry?.automaticRecoveryAttempts);
+    return Number.isInteger(attempts) && attempts > 0 ? attempts : 1;
+  }
+
+  nextAutomaticRecoveryAttemptCount(entry) {
+    const attempts = Number(entry?.automaticRecoveryAttempts);
+    return Number.isInteger(attempts) && attempts > 0 ? attempts + 1 : 1;
+  }
+
+  automaticRecoveryCooldownMs(entry) {
+    const exponent = Math.max(0, this.automaticRecoveryAttemptCount(entry) - 1);
+    return Math.min(
+      AUTOMATIC_PASSWORD_RECOVERY_BASE_COOLDOWN_MS * (2 ** exponent),
+      AUTOMATIC_PASSWORD_RECOVERY_MAX_COOLDOWN_MS,
+    );
+  }
+
+  nextAutomaticRecoveryAt(entry) {
+    const timestamp = Date.parse(String(entry?.lastAutomaticRecoveryAt || ""));
+    if (!Number.isFinite(timestamp)) {
+      return 0;
+    }
+
+    return timestamp + this.automaticRecoveryCooldownMs(entry);
+  }
+
+  passwordSessionRecoveryError(reason = "", entry) {
+    if (reason === "AUTH_AUTO_RECOVERY_COOLDOWN") {
+      const retryAt = this.nextAutomaticRecoveryAt(entry);
+      const retryDetail = retryAt
+        ? ` It will retry automatically after ${new Date(retryAt).toISOString()}.`
+        : " It will retry automatically after the active recovery cooldown.";
+      return new Error(
+        `This account is waiting for a scheduled automatic password recovery to prevent a session loop.${retryDetail}`,
+      );
+    }
+
     let detail = "Automatic password re-login is disabled for this recovery path to prevent AUTH_SESSION_LIMIT.";
     if (reason === "AUTH_SESSION_LIMIT") {
       detail = "The website reported AUTH_SESSION_LIMIT, so automatic password re-login is blocked to avoid creating more sessions.";
-    } else if (reason === "AUTH_AUTO_RECOVERY_COOLDOWN") {
-      detail = "Automatic password recovery was already attempted recently, so another password login is blocked to prevent a session loop.";
     } else if (reason === "AUTH_REFRESH_COOKIE_MISSING") {
       detail = "The cached password session has no refresh Cookie, so automatic recovery is disabled because the server has not confirmed that the old session was revoked.";
     } else if (reason === "AUTH_AUTO_RECOVERY_FAILED") {
@@ -748,6 +797,7 @@ export class ForApiClient {
   }
 
   manualReconnectEntry(reason, previousEntry = {}) {
+    const automaticRecoveryAttempts = Number(previousEntry.automaticRecoveryAttempts);
     return {
       baseUrl: this.baseUrl,
       userId: this.userId,
@@ -756,9 +806,23 @@ export class ForApiClient {
       authorization: "",
       lastPasswordLoginAt: previousEntry.lastPasswordLoginAt,
       lastAutomaticRecoveryAt: previousEntry.lastAutomaticRecoveryAt,
+      automaticRecoveryAttempts:
+        Number.isInteger(automaticRecoveryAttempts) && automaticRecoveryAttempts > 0
+          ? automaticRecoveryAttempts
+          : undefined,
       requiresManualReconnect: true,
       reconnectReason: reason,
       reconnectRequiredAt: new Date().toISOString(),
+    };
+  }
+
+  automaticRecoveryCooldownEntry(previousEntry = {}, attempts) {
+    const nextAttempts = Number.isInteger(attempts) && attempts > 0
+      ? attempts
+      : this.automaticRecoveryAttemptCount(previousEntry);
+    return {
+      ...this.manualReconnectEntry("AUTH_AUTO_RECOVERY_COOLDOWN", previousEntry),
+      automaticRecoveryAttempts: nextAttempts,
     };
   }
 
@@ -777,16 +841,20 @@ export class ForApiClient {
     }
 
     // A server-revoked refresh session is the one case where a replacement
-    // login is useful. Do not penalize a recent manual reconnect: it may have
-    // been invalidated immediately by the server. The cooldown applies to
-    // automated replacements only, so a broken endpoint can never create a
-    // password-login loop.
-    const lastAttempt = entry?.lastAutomaticRecoveryAt;
-    const timestamp = Date.parse(String(lastAttempt || ""));
-    return !Number.isFinite(timestamp) || Date.now() - timestamp >= AUTOMATIC_PASSWORD_RECOVERY_COOLDOWN_MS;
+    // login is useful. Retry automatically with bounded exponential backoff
+    // instead of forcing a person to reconnect for ordinary session churn.
+    // A healthy refresh clears the counter; AUTH_SESSION_LIMIT remains a
+    // permanent manual boundary below.
+    const retryAt = this.nextAutomaticRecoveryAt(entry);
+    return retryAt === 0 || Date.now() >= retryAt;
   }
 
-  async persistSession(cache, { passwordLogin = false, automaticRecovery = false } = {}) {
+  async persistSession(cache, {
+    passwordLogin = false,
+    automaticRecovery = false,
+    automaticRecoveryAttempts = 0,
+    resetAutomaticRecoveryBackoff = false,
+  } = {}) {
     if (!this.sessionCacheFile || !this.accountId) {
       return;
     }
@@ -800,14 +868,23 @@ export class ForApiClient {
     if (previousEntry.lastPasswordLoginAt) {
       entry.lastPasswordLoginAt = previousEntry.lastPasswordLoginAt;
     }
-    if (previousEntry.lastAutomaticRecoveryAt) {
+    if (!resetAutomaticRecoveryBackoff && !passwordLogin && previousEntry.lastAutomaticRecoveryAt) {
       entry.lastAutomaticRecoveryAt = previousEntry.lastAutomaticRecoveryAt;
+    }
+    if (!resetAutomaticRecoveryBackoff && !passwordLogin) {
+      const previousAttempts = Number(previousEntry.automaticRecoveryAttempts);
+      if (Number.isInteger(previousAttempts) && previousAttempts > 0) {
+        entry.automaticRecoveryAttempts = previousAttempts;
+      }
     }
     if (passwordLogin) {
       entry.lastPasswordLoginAt = now;
     }
     if (automaticRecovery) {
       entry.lastAutomaticRecoveryAt = now;
+      entry.automaticRecoveryAttempts = automaticRecoveryAttempts > 0
+        ? automaticRecoveryAttempts
+        : this.nextAutomaticRecoveryAttemptCount(previousEntry);
     }
 
     cache.accounts[this.accountId] = entry;
@@ -853,6 +930,63 @@ export class ForApiClient {
     }
   }
 
+  async requestPasswordSessionRefresh({
+    includeSessionHeader = true,
+    includeAuthorization = true,
+    raceAttempt = 0,
+  } = {}) {
+    const refreshHeaders = {
+      Origin: this.baseUrl,
+    };
+    if (includeSessionHeader && this.sessionId) {
+      refreshHeaders["X-Auth-Session"] = this.sessionId;
+    }
+
+    try {
+      const response = await this.requestJson(AUTH_REFRESH_PATH, {
+        method: "POST",
+        authRequired: false,
+        maxAttempts: 1,
+        extraHeaders: refreshHeaders,
+        includeAuthorization,
+      });
+
+      if (!response?.success) {
+        const detail = [response?.code, response?.message]
+          .filter((value) => value !== undefined && value !== null && String(value).trim())
+          .map(String)
+          .join(": ") || "Session refresh failed.";
+        throw new Error(detail);
+      }
+
+      return response;
+    } catch (error) {
+      // Match the website client: a separate browser tab can rotate the
+      // one-time cookie between requests, so retry short-lived races before
+      // treating the refresh session as invalid.
+      if (this.isRefreshRaceError(error) && raceAttempt < REFRESH_RACE_RETRY_DELAYS_MS.length) {
+        await sleep(REFRESH_RACE_RETRY_DELAYS_MS[raceAttempt]);
+        return this.requestPasswordSessionRefresh({
+          includeSessionHeader,
+          includeAuthorization,
+          raceAttempt: raceAttempt + 1,
+        });
+      }
+
+      // The official web client retries a session-id mismatch without its
+      // stale in-memory access bundle. Preserve the HttpOnly refresh Cookie,
+      // but omit both X-Auth-Session and Authorization for that one retry.
+      if (includeSessionHeader && this.isRefreshSessionMismatchError(error)) {
+        return this.requestPasswordSessionRefresh({
+          includeSessionHeader: false,
+          includeAuthorization: false,
+        });
+      }
+
+      throw error;
+    }
+  }
+
   async performPasswordSessionRefresh({ force }) {
     return this.withSessionCacheLock(async () => {
       const cache = await this.readSessionCache();
@@ -878,7 +1012,7 @@ export class ForApiClient {
           return true;
         }
         this.clearPasswordSession();
-        throw this.passwordSessionRecoveryError(cachedEntry?.reconnectReason);
+        throw this.passwordSessionRecoveryError(cachedEntry?.reconnectReason, cachedEntry);
       }
 
       if (
@@ -896,34 +1030,14 @@ export class ForApiClient {
         return false;
       }
 
-      const refreshHeaders = {
-        Origin: this.baseUrl,
-      };
-      if (this.sessionId) {
-        refreshHeaders["X-Auth-Session"] = this.sessionId;
-      }
-
       try {
-        const response = await this.requestJson(AUTH_REFRESH_PATH, {
-          method: "POST",
-          authRequired: false,
-          maxAttempts: 1,
-          extraHeaders: refreshHeaders,
-        });
-
-        if (!response?.success) {
-          const detail = [response?.code, response?.message]
-            .filter((value) => value !== undefined && value !== null && String(value).trim())
-            .map(String)
-            .join(": ") || "Session refresh failed.";
-          throw new Error(detail);
-        }
+        const response = await this.requestPasswordSessionRefresh();
 
         this.applyAuthenticationResponse(response);
         this.hasLoggedIn = false;
         this.sessionFromCache = false;
         this.sessionVersion += 1;
-        await this.persistSession(cache);
+        await this.persistSession(cache, { resetAutomaticRecoveryBackoff: true });
         return true;
       } catch (error) {
         if (this.isSessionLimitError(error)) {
@@ -942,13 +1056,6 @@ export class ForApiClient {
             await this.performPasswordLoginWithCache(cache, { automaticRecovery: true });
             return true;
           } catch (recoveryError) {
-            if (!this.isSessionLimitError(recoveryError)) {
-              cache.accounts[this.accountId] = this.manualReconnectEntry(
-                "AUTH_AUTO_RECOVERY_FAILED",
-                cachedEntry,
-              );
-              await this.writeSessionCache(cache);
-            }
             this.clearPasswordSession();
             throw recoveryError;
           }
@@ -957,10 +1064,13 @@ export class ForApiClient {
         const reason = this.allowPasswordRecovery
           ? "AUTH_AUTO_RECOVERY_COOLDOWN"
           : "AUTH_SESSION_REVOKED";
-        cache.accounts[this.accountId] = this.manualReconnectEntry(reason, cachedEntry);
+        const entry = reason === "AUTH_AUTO_RECOVERY_COOLDOWN"
+          ? this.automaticRecoveryCooldownEntry(cachedEntry)
+          : this.manualReconnectEntry(reason, cachedEntry);
+        cache.accounts[this.accountId] = entry;
         await this.writeSessionCache(cache);
         this.clearPasswordSession();
-        throw this.passwordSessionRecoveryError(reason);
+        throw this.passwordSessionRecoveryError(reason, entry);
       }
     });
   }
@@ -999,6 +1109,7 @@ export class ForApiClient {
     method = "GET",
     body,
     authRequired = true,
+    includeAuthorization = true,
     retried = false,
     attempt = 1,
     maxAttempts = 3,
@@ -1027,7 +1138,7 @@ export class ForApiClient {
       headers["New-Api-User"] = this.userId;
     }
 
-    if (this.authorization) {
+    if (includeAuthorization && this.authorization) {
       headers.Authorization = this.authorization;
     }
 
@@ -1062,6 +1173,7 @@ export class ForApiClient {
           method,
           body,
           authRequired,
+          includeAuthorization,
           retried,
           attempt: attempt + 1,
           maxAttempts,
@@ -1086,6 +1198,7 @@ export class ForApiClient {
           method,
           body,
           authRequired,
+          includeAuthorization,
           retried: true,
           attempt,
           maxAttempts,
@@ -1104,6 +1217,7 @@ export class ForApiClient {
           method,
           body,
           authRequired,
+          includeAuthorization,
           retried: true,
           attempt,
           maxAttempts,
@@ -1141,6 +1255,7 @@ export class ForApiClient {
           method,
           body,
           authRequired,
+          includeAuthorization,
           retried: true,
           attempt,
           maxAttempts,
@@ -1159,6 +1274,7 @@ export class ForApiClient {
           method,
           body,
           authRequired,
+          includeAuthorization,
           retried: true,
           attempt,
           maxAttempts,
@@ -1348,6 +1464,9 @@ export class ForApiClient {
     { automaticRecovery = false, forcePasswordLogin = false } = {},
   ) {
     const cachedEntry = cache.accounts[this.accountId];
+    const automaticRecoveryAttempts = automaticRecovery
+      ? this.nextAutomaticRecoveryAttemptCount(cachedEntry)
+      : 0;
     const cooldownRecoveryAllowed = automaticRecovery &&
       cachedEntry?.reconnectReason === "AUTH_AUTO_RECOVERY_COOLDOWN" &&
       this.isAutomaticPasswordRecoveryAllowed(cachedEntry);
@@ -1362,17 +1481,15 @@ export class ForApiClient {
         delete cache.accounts[this.accountId];
         await this.writeSessionCache(cache);
       } else {
-        throw this.passwordSessionRecoveryError(cachedEntry?.reconnectReason);
+        throw this.passwordSessionRecoveryError(cachedEntry?.reconnectReason, cachedEntry);
       }
     }
 
     if (automaticRecovery && !cooldownRecoveryAllowed && !this.isAutomaticPasswordRecoveryAllowed(cachedEntry)) {
-      cache.accounts[this.accountId] = this.manualReconnectEntry(
-        "AUTH_AUTO_RECOVERY_COOLDOWN",
-        cachedEntry,
-      );
+      const entry = this.automaticRecoveryCooldownEntry(cachedEntry);
+      cache.accounts[this.accountId] = entry;
       await this.writeSessionCache(cache);
-      throw this.passwordSessionRecoveryError("AUTH_AUTO_RECOVERY_COOLDOWN");
+      throw this.passwordSessionRecoveryError("AUTH_AUTO_RECOVERY_COOLDOWN", entry);
     }
 
     this.clearPasswordSession();
@@ -1403,6 +1520,7 @@ export class ForApiClient {
       await this.persistSession(cache, {
         passwordLogin: true,
         automaticRecovery,
+        automaticRecoveryAttempts,
       });
       this.passwordLoginAttempted = false;
     } catch (error) {
@@ -1413,11 +1531,14 @@ export class ForApiClient {
         throw this.passwordSessionRecoveryError("AUTH_SESSION_LIMIT");
       }
       if (automaticRecovery) {
-        cache.accounts[this.accountId] = this.manualReconnectEntry(
-          "AUTH_AUTO_RECOVERY_FAILED",
+        const entry = this.automaticRecoveryCooldownEntry(
           cachedEntry,
+          automaticRecoveryAttempts,
         );
+        cache.accounts[this.accountId] = entry;
         await this.writeSessionCache(cache);
+        this.clearPasswordSession();
+        throw this.passwordSessionRecoveryError("AUTH_AUTO_RECOVERY_COOLDOWN", entry);
       }
       throw error;
     }

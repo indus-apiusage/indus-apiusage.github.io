@@ -448,16 +448,23 @@ test("ForApiClient keeps password bodies out of curl process arguments", async (
     "#!/bin/sh",
     "previous=\"\"",
     "body_arg=\"\"",
+    "cookie_input=\"\"",
     "cookie_jar=\"\"",
     "for arg in \"$@\"; do",
     "  if [ \"$previous\" = \"--data-binary\" ]; then body_arg=\"$arg\"; fi",
+    "  if [ \"$previous\" = \"--cookie\" ]; then cookie_input=\"$arg\"; fi",
     "  if [ \"$previous\" = \"--cookie-jar\" ]; then cookie_jar=\"$arg\"; fi",
     "  previous=\"$arg\"",
     "done",
-    "printf '%s\\n' \"$@\" > \"$FOROPENCODE_CURL_TEST_CAPTURE\"",
+    "printf '%s\\n' \"$@\" >> \"$FOROPENCODE_CURL_TEST_CAPTURE\"",
     "body_file=\"$(echo \"$body_arg\" | cut -c2-)\"",
-    "if [ -z \"$body_file\" ] || [ ! -f \"$body_file\" ]; then exit 10; fi",
-    "if ! grep -q '\"password\":\"password\"' \"$body_file\"; then exit 11; fi",
+    "if [ -n \"$body_file\" ]; then",
+    "  if [ ! -f \"$body_file\" ]; then exit 10; fi",
+    "  if ! grep -q '\"password\":\"password\"' \"$body_file\"; then exit 11; fi",
+    "fi",
+    "if [ -z \"$body_file\" ]; then",
+    "  if [ -z \"$cookie_input\" ] || ! grep -q 'new_api_refresh' \"$cookie_input\"; then exit 13; fi",
+    "fi",
     "if [ -z \"$cookie_jar\" ]; then exit 12; fi",
     "printf '# Netscape HTTP Cookie File\\n#HttpOnly_example.test\\tFALSE\\t/api/user/auth\\tFALSE\\t0\\tnew_api_refresh\\tcurl-refresh-token\\n' > \"$cookie_jar\"",
     "printf '{\"success\":true,\"data\":{\"access_token\":\"curl-access-token\",\"id\":1143}}\\n'",
@@ -485,10 +492,12 @@ test("ForApiClient keeps password bodies out of curl process arguments", async (
       sessionCacheFile: path.join(cwd, "auth-session-cache.json"),
     });
     await client.ensureAuthenticated();
+    await client.fetchSelf();
 
     const curlArgs = await fs.readFile(captureFile, "utf8");
     assert.match(curlArgs, /--data-binary\n@/);
     assert.doesNotMatch(curlArgs, /password/);
+    assert.doesNotMatch(curlArgs, /^Cookie:/m);
     assert.equal(client.authorization, "Bearer curl-access-token");
     assert.match(client.cookieHeader, /new_api_refresh=curl-refresh-token/);
     const cache = JSON.parse(await fs.readFile(path.join(cwd, "auth-session-cache.json"), "utf8"));
@@ -594,6 +603,192 @@ test("ForApiClient rotates expiring password sessions without another password l
       assert.match(cache.accounts["account-1"].cookie, /new_api_refresh=refresh-two/);
       assert.equal(cache.accounts["account-1"].sessionId, "session-one");
       assert.equal(cache.accounts["account-1"].accessTokenExpiresAt, now + 900);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ForApiClient retries a session mismatch without stale session headers", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-refresh-mismatch-"));
+  const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
+  const originalFetch = globalThis.fetch;
+  const now = Math.floor(Date.now() / 1000);
+  const initialToken = makeAccessToken({ sid: "mismatch-session", expiresAt: now + 30 });
+  const refreshedToken = makeAccessToken({ sid: "mismatch-session", expiresAt: now + 900 });
+  let loginCalls = 0;
+  let refreshCalls = 0;
+
+  globalThis.fetch = async (url, options = {}) => {
+    const pathName = new URL(String(url)).pathname;
+    if (pathName === "/api/user/login") {
+      loginCalls += 1;
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: initialToken,
+          access_expires_at: now + 30,
+          user: { id: 1143 },
+          session: { sid: "mismatch-session" },
+        },
+      }, {
+        setCookies: ["new_api_refresh=mismatch-refresh; Path=/api/user/auth; HttpOnly"],
+      });
+    }
+
+    if (pathName === "/api/user/auth/refresh") {
+      refreshCalls += 1;
+      assert.match(String(options.headers?.Cookie || ""), /new_api_refresh=mismatch-refresh/);
+      if (refreshCalls === 1) {
+        assert.equal(options.headers?.["X-Auth-Session"], "mismatch-session");
+        assert.equal(options.headers?.Authorization, `Bearer ${initialToken}`);
+        return mockJsonResponse(409, {
+          success: false,
+          code: "AUTH_SESSION_MISMATCH",
+          message: "Session changed in another client",
+        });
+      }
+
+      assert.equal(options.headers?.["X-Auth-Session"], undefined);
+      assert.equal(options.headers?.Authorization, undefined);
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: refreshedToken,
+          access_expires_at: now + 900,
+          user: { id: 1143 },
+          session: { sid: "mismatch-session" },
+        },
+      }, {
+        setCookies: ["new_api_refresh=mismatch-refresh-two; Path=/api/user/auth; HttpOnly"],
+      });
+    }
+
+    return mockJsonResponse(200, { success: true, data: {} });
+  };
+
+  try {
+    await withNoProxy(async () => {
+      const initialAuth = {
+        username: "JunhaoCai",
+        password: "password",
+        preferPasswordLogin: true,
+        allowPasswordLogin: true,
+        allowPasswordRecovery: true,
+      };
+      const firstClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: initialAuth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await firstClient.ensureAuthenticated();
+
+      const backgroundClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: { ...initialAuth, allowPasswordLogin: false },
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await backgroundClient.fetchSelf();
+
+      assert.equal(loginCalls, 1);
+      assert.equal(refreshCalls, 2);
+      assert.equal(backgroundClient.authorization, `Bearer ${refreshedToken}`);
+      const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
+      assert.equal(cache.accounts["account-1"].requiresManualReconnect, undefined);
+      assert.equal(cache.accounts["account-1"].automaticRecoveryAttempts, undefined);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ForApiClient retries a refresh race before attempting password recovery", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-auth-refresh-race-"));
+  const sessionCacheFile = path.join(cwd, "auth-session-cache.json");
+  const originalFetch = globalThis.fetch;
+  const now = Math.floor(Date.now() / 1000);
+  const initialToken = makeAccessToken({ sid: "race-session", expiresAt: now + 30 });
+  const refreshedToken = makeAccessToken({ sid: "race-session", expiresAt: now + 900 });
+  let loginCalls = 0;
+  let refreshCalls = 0;
+
+  globalThis.fetch = async (url, options = {}) => {
+    const pathName = new URL(String(url)).pathname;
+    if (pathName === "/api/user/login") {
+      loginCalls += 1;
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: initialToken,
+          access_expires_at: now + 30,
+          user: { id: 1143 },
+          session: { sid: "race-session" },
+        },
+      }, {
+        setCookies: ["new_api_refresh=race-refresh; Path=/api/user/auth; HttpOnly"],
+      });
+    }
+
+    if (pathName === "/api/user/auth/refresh") {
+      refreshCalls += 1;
+      assert.equal(options.headers?.["X-Auth-Session"], "race-session");
+      assert.equal(options.headers?.Authorization, `Bearer ${initialToken}`);
+      if (refreshCalls === 1) {
+        return mockJsonResponse(409, {
+          success: false,
+          code: "AUTH_REFRESH_RACE",
+          message: "Refresh token rotated by another client",
+        });
+      }
+
+      return mockJsonResponse(200, {
+        success: true,
+        data: {
+          access_token: refreshedToken,
+          access_expires_at: now + 900,
+          user: { id: 1143 },
+          session: { sid: "race-session" },
+        },
+      }, {
+        setCookies: ["new_api_refresh=race-refresh-two; Path=/api/user/auth; HttpOnly"],
+      });
+    }
+
+    return mockJsonResponse(200, { success: true, data: {} });
+  };
+
+  try {
+    await withNoProxy(async () => {
+      const initialAuth = {
+        username: "JunhaoCai",
+        password: "password",
+        preferPasswordLogin: true,
+        allowPasswordLogin: true,
+        allowPasswordRecovery: true,
+      };
+      const firstClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: initialAuth,
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await firstClient.ensureAuthenticated();
+
+      const backgroundClient = new ForApiClient({
+        baseUrl: "http://example.test",
+        auth: { ...initialAuth, allowPasswordLogin: false },
+        accountId: "account-1",
+        sessionCacheFile,
+      });
+      await backgroundClient.fetchSelf();
+
+      assert.equal(loginCalls, 1);
+      assert.equal(refreshCalls, 2);
+      assert.equal(backgroundClient.authorization, `Bearer ${refreshedToken}`);
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -1074,7 +1269,7 @@ test("ForApiClient does not repeat automatic recovery during its cooldown", asyn
       });
       await assert.rejects(
         () => thirdClient.fetchSelf(),
-        /Automatic password recovery was already attempted recently/,
+        /waiting for a scheduled automatic password recovery/,
       );
 
       assert.equal(loginCalls, 2);
@@ -1082,6 +1277,7 @@ test("ForApiClient does not repeat automatic recovery during its cooldown", asyn
       const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
       assert.equal(cache.accounts["account-1"].requiresManualReconnect, true);
       assert.equal(cache.accounts["account-1"].reconnectReason, "AUTH_AUTO_RECOVERY_COOLDOWN");
+      assert.equal(cache.accounts["account-1"].automaticRecoveryAttempts, 1);
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -1158,7 +1354,7 @@ test("ForApiClient retries a temporary recovery quarantine after the cooldown", 
       assert.equal(loginCalls, 2);
 
       const cache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
-      const oldAttempt = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+      const oldAttempt = new Date(Date.now() - 16 * 60 * 1000).toISOString();
       cache.accounts["account-1"] = {
         ...cache.accounts["account-1"],
         cookie: "",
@@ -1166,6 +1362,7 @@ test("ForApiClient retries a temporary recovery quarantine after the cooldown", 
         requiresManualReconnect: true,
         reconnectReason: "AUTH_AUTO_RECOVERY_COOLDOWN",
         lastAutomaticRecoveryAt: oldAttempt,
+        automaticRecoveryAttempts: 1,
       };
       await fs.writeFile(sessionCacheFile, `${JSON.stringify(cache, null, 2)}\n`, { mode: 0o600 });
 
@@ -1182,6 +1379,7 @@ test("ForApiClient retries a temporary recovery quarantine after the cooldown", 
       assert.equal(thirdClient.authorization, `Bearer ${resumedToken}`);
       const resumedCache = JSON.parse(await fs.readFile(sessionCacheFile, "utf8"));
       assert.equal(resumedCache.accounts["account-1"].requiresManualReconnect, undefined);
+      assert.equal(resumedCache.accounts["account-1"].automaticRecoveryAttempts, 2);
     });
   } finally {
     globalThis.fetch = originalFetch;
