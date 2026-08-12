@@ -1446,7 +1446,7 @@ struct APIKeyVaultView: View {
                     }
                 }
 
-                if model.apiKeyRecords.isEmpty {
+                if model.accounts.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "key.slash")
                             .font(.system(size: 28, weight: .light))
@@ -1475,8 +1475,13 @@ struct APIKeyVaultView: View {
                     .padding(.vertical, 42)
                 } else {
                     LazyVStack(spacing: 10) {
-                        ForEach(model.apiKeyRecords) { record in
-                            APIKeyVaultRow(model: model, record: record)
+                        ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, profile in
+                            APIKeyAccountSection(
+                                model: model,
+                                profile: profile,
+                                index: index,
+                                records: model.apiKeyRecords.filter { $0.accountID == profile.id }
+                            )
                         }
                     }
                     .padding(.top, 17)
@@ -1503,6 +1508,138 @@ struct APIKeyVaultView: View {
     }
 }
 
+struct APIKeyAccountSection: View {
+    @ObservedObject var model: ConsoleModel
+    let profile: AccountProfile
+    let index: Int
+    let records: [APIKeyRecord]
+
+    private var accountTitle: String {
+        profile.label.isEmpty ? profile.name : profile.label
+    }
+
+    private var accountTint: Color {
+        profile.colorIndex % 2 == 0 ? ConsolePalette.cyan : ConsolePalette.pink
+    }
+
+    private var userIdentifier: String {
+        let value = profile.userID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "本地账号配置" : "UID \(value)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                HStack(spacing: 11) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(accountTint.opacity(0.13))
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(accountTint)
+                    }
+                    .frame(width: 42, height: 42)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(accountTitle)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(ConsolePalette.ink)
+                            .lineLimit(1)
+                        Text(userIdentifier)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(ConsolePalette.muted)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("当前余额")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(ConsolePalette.muted)
+                    Text(model.balance(for: index)?.balanceText ?? "等待同步")
+                        .font(.system(size: 25, weight: .bold, design: .rounded))
+                        .foregroundStyle(ConsolePalette.ink)
+                        .minimumScaleFactor(0.72)
+                        .lineLimit(1)
+                }
+
+                Button {
+                    model.openTopUp(for: profile)
+                } label: {
+                    Label("充值", systemImage: "arrow.up.right")
+                }
+                .buttonStyle(GlassButtonStyle(tint: ConsolePalette.pink))
+            }
+
+            HStack(spacing: 20) {
+                if let account = model.balance(for: index) {
+                    MetadataValue(title: "网站用量", value: account.usageText)
+                    MetadataValue(title: "GPT_PLUS 倍率", value: account.multiplierText)
+                    MetadataValue(title: "请求数", value: "\(account.requestCount)")
+                }
+                MetadataValue(title: "API KEYS", value: "\(records.count)")
+                Spacer(minLength: 0)
+                Button {
+                    model.syncRemoteAPIKeys(for: profile.id)
+                } label: {
+                    Label(
+                        model.isAPIKeySyncing(for: profile.id) ? "同步中" : "从网站同步",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                }
+                .buttonStyle(GlassButtonStyle(tint: accountTint))
+                .disabled(model.isAPIKeySyncing(for: profile.id))
+            }
+
+            Divider().overlay(ConsolePalette.line)
+
+            if records.isEmpty {
+                HStack(spacing: 11) {
+                    Image(systemName: "key.slash")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(accountTint)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("该账号还没有 API Key")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(ConsolePalette.ink)
+                        Text("可以从网站同步，或进入账号矩阵添加完整密钥。")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(ConsolePalette.muted)
+                    }
+                    Spacer(minLength: 8)
+                    Button("网页管理") {
+                        model.openKeyManager(for: profile.id)
+                    }
+                    .buttonStyle(GlassButtonStyle(tint: ConsolePalette.muted))
+                }
+                .padding(.vertical, 5)
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(records) { record in
+                        APIKeyVaultRow(model: model, record: record)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [Color.white.opacity(0.78), accountTint.opacity(0.07)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 19, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                .stroke(accountTint.opacity(0.22), lineWidth: 1)
+        }
+    }
+}
+
 struct APIKeyVaultRow: View {
     @ObservedObject var model: ConsoleModel
     let record: APIKeyRecord
@@ -1519,23 +1656,11 @@ struct APIKeyVaultRow: View {
             .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(record.displayName)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(ConsolePalette.ink)
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                    Text(record.accountSourceText)
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(accountTint)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(accountTint.opacity(0.12), in: Capsule())
-                        .overlay(Capsule().stroke(accountTint.opacity(0.24), lineWidth: 1))
-                        .help("此 API Key 来自 \(record.accountSourceText)")
-                }
+                Text(record.displayName)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(ConsolePalette.ink)
+                    .lineLimit(1)
+                    .layoutPriority(1)
                 Text(record.statusText)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(ConsolePalette.muted)
@@ -1583,10 +1708,6 @@ struct APIKeyVaultRow: View {
         .padding(12)
         .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ConsolePalette.line, lineWidth: 1))
-    }
-
-    private var accountTint: Color {
-        record.accountColorIndex % 2 == 0 ? ConsolePalette.cyan : Color(hex: 0xF28CB6)
     }
 }
 
