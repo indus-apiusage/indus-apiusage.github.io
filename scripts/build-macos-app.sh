@@ -15,6 +15,7 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
 DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-}"
 APP_PROVISIONING_PROFILE="${APP_PROVISIONING_PROFILE:-}"
 WIDGET_PROVISIONING_PROFILE="${WIDGET_PROVISIONING_PROFILE:-}"
+CODESIGN_TIMESTAMP="${CODESIGN_TIMESTAMP:-required}"
 
 if [[ -z "${CODESIGN_IDENTITY}" && -n "${DEVELOPMENT_TEAM}" ]]; then
   CODESIGN_IDENTITY="$( (security find-identity -v -p codesigning 2>/dev/null || true) \
@@ -64,7 +65,13 @@ sign_bundle() {
   local entitlements="$2"
 
   if [[ -n "${CODESIGN_IDENTITY}" ]]; then
-    codesign --force --options runtime --timestamp \
+    local timestamp_args=()
+    if [[ "${CODESIGN_TIMESTAMP}" == "none" ]]; then
+      timestamp_args+=(--timestamp=none)
+    else
+      timestamp_args+=(--timestamp)
+    fi
+    codesign --force --options runtime "${timestamp_args[@]}" \
       --entitlements "${entitlements}" \
       --sign "${CODESIGN_IDENTITY}" "${bundle}" >/dev/null
   else

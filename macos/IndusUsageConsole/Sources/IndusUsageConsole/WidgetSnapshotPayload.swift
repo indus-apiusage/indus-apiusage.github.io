@@ -35,6 +35,46 @@ struct WidgetSnapshotPayload: Codable {
         syncState: "等待同步",
         accounts: []
     )
+
+    static func newest(
+        local: WidgetSnapshotPayload?,
+        remote: WidgetSnapshotPayload?
+    ) -> WidgetSnapshotPayload? {
+        switch (local, remote) {
+        case let (local?, remote?):
+            guard let localDate = freshnessDate(local) else { return remote }
+            guard let remoteDate = freshnessDate(remote) else { return local }
+            return localDate >= remoteDate ? local : remote
+        case let (local?, nil):
+            return local
+        case let (nil, remote?):
+            return remote
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    private static func freshnessDate(_ payload: WidgetSnapshotPayload) -> Date? {
+        if let generatedAt = payload.generatedAt {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: generatedAt) {
+                return date
+            }
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: generatedAt) {
+                return date
+            }
+        }
+
+        guard let latestDate = payload.latestDate else { return nil }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: latestDate)
+    }
 }
 
 enum IndusWidgetDataStore {
@@ -64,10 +104,18 @@ enum IndusWidgetDataStore {
     }
 
     static func loadRemote(completion: @escaping (WidgetSnapshotPayload?) -> Void) {
-        var request = URLRequest(url: remoteURL)
+        var components = URLComponents(url: remoteURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(
+                name: "refresh",
+                value: String(Int(Date().timeIntervalSince1970 * 1000))
+            )
+        ]
+        var request = URLRequest(url: components.url!)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
         URLSession.shared.dataTask(with: request) { data, response, _ in
             guard let httpResponse = response as? HTTPURLResponse,
