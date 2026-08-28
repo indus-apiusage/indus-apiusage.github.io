@@ -24,6 +24,11 @@ if [ -f "$ENV_FILE" ]; then
   source "$ENV_FILE"
 fi
 
+if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
+  # Keep direct sync:publish calls on GitHub's more reliable SSH-over-443 path.
+  export GIT_SSH_COMMAND="ssh -i '${SYNC_GIT_SSH_KEY_PATH}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
+fi
+
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 REMOTE_NAME="${SYNC_GIT_REMOTE_NAME:-origin}"
 REMOTE_BRANCH="${SYNC_GIT_REMOTE_BRANCH:-$CURRENT_BRANCH}"
