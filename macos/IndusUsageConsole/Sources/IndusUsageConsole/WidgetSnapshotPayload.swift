@@ -78,18 +78,45 @@ struct WidgetSnapshotPayload: Codable {
 }
 
 enum IndusWidgetDataStore {
+    private static let widgetBundleIdentifier = "com.indus-apiusage.console.widget"
     static let remoteURL = URL(string: "https://indus-apiusage.github.io/data/widget.json")!
 
     static var candidateURLs: [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
         let applicationSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0]
-        return [
+        let globalURL = home
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("IndusUsageConsole", isDirectory: true)
+            .appendingPathComponent("widget.json")
+        let widgetContainerURL = home
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Containers", isDirectory: true)
+            .appendingPathComponent(widgetBundleIdentifier, isDirectory: true)
+            .appendingPathComponent("Data", isDirectory: true)
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("IndusUsageConsole", isDirectory: true)
+            .appendingPathComponent("widget.json")
+        let bundledURL = Bundle.main.url(forResource: "widget", withExtension: "json")
+
+        let urls = [
             applicationSupport
                 .appendingPathComponent("IndusUsageConsole", isDirectory: true)
                 .appendingPathComponent("widget.json"),
-        ]
+            widgetContainerURL,
+            globalURL,
+            bundledURL,
+        ].compactMap { $0 }
+
+        return urls.reduce(into: [URL]()) { result, url in
+            if !result.contains(url) {
+                result.append(url)
+            }
+        }
     }
 
     static func load() -> WidgetSnapshotPayload? {

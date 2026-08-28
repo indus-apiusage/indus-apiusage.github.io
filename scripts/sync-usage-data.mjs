@@ -89,6 +89,17 @@ async function writeMacWidgetSnapshot(payload, publicOutputPath) {
 
   const paths = [
     path.join(os.homedir(), "Library", "Application Support", "IndusUsageConsole", "widget.json"),
+    path.join(
+      os.homedir(),
+      "Library",
+      "Containers",
+      "com.indus-apiusage.console.widget",
+      "Data",
+      "Library",
+      "Application Support",
+      "IndusUsageConsole",
+      "widget.json",
+    ),
   ];
   let wroteSnapshot = false;
   for (const filePath of paths) {

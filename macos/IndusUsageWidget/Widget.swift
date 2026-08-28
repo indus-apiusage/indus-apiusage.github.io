@@ -14,6 +14,11 @@ struct IndusUsageWidgetProvider: TimelineProvider {
 
     func getSnapshot(in context: Context, completion: @escaping (IndusUsageWidgetEntry) -> Void) {
         let localPayload = IndusWidgetDataStore.load()
+        if let localPayload {
+            completion(IndusUsageWidgetEntry(date: Date(), payload: localPayload))
+            return
+        }
+
         IndusWidgetDataStore.loadRemote { payload in
             let entry = IndusUsageWidgetEntry(
                 date: Date(),
@@ -30,6 +35,17 @@ struct IndusUsageWidgetProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<IndusUsageWidgetEntry>) -> Void) {
         let localPayload = IndusWidgetDataStore.load()
+        if let localPayload {
+            let now = Date()
+            let refreshDate = Calendar.current.date(byAdding: .minute, value: 5, to: now)
+                ?? now.addingTimeInterval(300)
+            completion(Timeline(
+                entries: [IndusUsageWidgetEntry(date: now, payload: localPayload)],
+                policy: .after(refreshDate)
+            ))
+            return
+        }
+
         IndusWidgetDataStore.loadRemote { payload in
             let now = Date()
             let entry = IndusUsageWidgetEntry(

@@ -39,7 +39,9 @@ swiftc \
   -framework WidgetKit
 
 rm -rf "${APP_DIR}"
-mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources" "${APP_DIR}/Contents/PlugIns/IndusUsageWidget.appex/Contents/MacOS"
+mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources" \
+  "${APP_DIR}/Contents/PlugIns/IndusUsageWidget.appex/Contents/MacOS" \
+  "${APP_DIR}/Contents/PlugIns/IndusUsageWidget.appex/Contents/Resources"
 cp "${BIN_DIR}/IndusUsageConsole" "${APP_DIR}/Contents/MacOS/IndusUsageConsole"
 cp "${PACKAGE_DIR}/Info.plist" "${APP_DIR}/Contents/Info.plist"
 chmod 755 "${APP_DIR}/Contents/MacOS/IndusUsageConsole"
@@ -47,6 +49,13 @@ chmod 755 "${APP_DIR}/Contents/MacOS/IndusUsageConsole"
 cp "${WIDGET_BIN_DIR}/IndusUsageWidget" "${APP_DIR}/Contents/PlugIns/IndusUsageWidget.appex/Contents/MacOS/IndusUsageWidget"
 cp "${WIDGET_DIR}/Info.plist" "${APP_DIR}/Contents/PlugIns/IndusUsageWidget.appex/Contents/Info.plist"
 chmod 755 "${APP_DIR}/Contents/PlugIns/IndusUsageWidget.appex/Contents/MacOS/IndusUsageWidget"
+
+# Include a non-secret aggregate fallback so the widget can render even when
+# its sandbox has not received the first shared snapshot yet.
+if [[ -f "${ROOT_DIR}/docs/data/widget.json" ]]; then
+  cp "${ROOT_DIR}/docs/data/widget.json" \
+    "${APP_DIR}/Contents/PlugIns/IndusUsageWidget.appex/Contents/Resources/widget.json"
+fi
 
 ICONSET_DIR="${DIST_DIR}/IndusUsageConsole.iconset"
 rm -rf "${ICONSET_DIR}"
