@@ -14,10 +14,16 @@ fi
 source "$ENV_FILE"
 
 if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
-  # GitHub's SSH endpoint on 443 is more reliable on networks that reset
-  # ordinary SSH connections on port 22.
-  export GIT_SSH_COMMAND="ssh -i '${SYNC_GIT_SSH_KEY_PATH}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
+  local_quoted_key=""
+  printf -v local_quoted_key '%q' "${SYNC_GIT_SSH_KEY_PATH}"
+  key_option="-i ${local_quoted_key} -o IdentitiesOnly=yes"
+else
+  key_option=""
 fi
+
+# Keep one-shot local runs on the same non-interactive SSH transport as the
+# long-running loop.
+export GIT_SSH_COMMAND="ssh ${key_option} -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
 
 cd "$ROOT_DIR"
 npm run sync:publish

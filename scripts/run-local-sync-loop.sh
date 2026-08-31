@@ -8,6 +8,7 @@ LOCK_DIR="${ROOT_DIR}/work/sync-loop.lock"
 LOG_FILE="${ROOT_DIR}/work/sync-loop.log"
 ENV_FILE="${SYNC_ENV_FILE:-${ROOT_DIR}/work/sync.env}"
 SYNC_INTERVAL_SECONDS="${SYNC_INTERVAL_SECONDS:-300}"
+SYNC_GIT_RETRY_ATTEMPTS="${SYNC_GIT_RETRY_ATTEMPTS:-3}"
 
 normalize_interval() {
   if ! [[ "${SYNC_INTERVAL_SECONDS:-}" =~ ^[1-9][0-9]*$ ]]; then
@@ -23,11 +24,21 @@ if [ -f "$ENV_FILE" ]; then
 fi
 normalize_interval
 
-if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
-  # GitHub's SSH endpoint on 443 is more reliable on networks that reset
-  # ordinary SSH connections on port 22.
-  export GIT_SSH_COMMAND="ssh -i '${SYNC_GIT_SSH_KEY_PATH}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
-fi
+configure_git_ssh() {
+  local key_option=""
+
+  if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
+    local quoted_key
+    printf -v quoted_key '%q' "${SYNC_GIT_SSH_KEY_PATH}"
+    key_option="-i ${quoted_key} -o IdentitiesOnly=yes"
+  fi
+
+  # Use GitHub's SSH endpoint on 443 and fail fast instead of waiting for an
+  # interactive prompt in a background process.
+  export GIT_SSH_COMMAND="ssh ${key_option} -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
+}
+
+configure_git_ssh
 
 CURRENT_BRANCH="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)"
 REMOTE_NAME="${SYNC_GIT_REMOTE_NAME:-origin}"
@@ -105,6 +116,29 @@ trap 'handle_signal SIGTERM' TERM
 
 log_message() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG_FILE"
+}
+
+run_git_with_retry() {
+  local attempt=1 delay
+  local max_attempts="${SYNC_GIT_RETRY_ATTEMPTS:-3}"
+
+  if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+    max_attempts=3
+  fi
+
+  while true; do
+    if git "$@"; then
+      return 0
+    fi
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      return 1
+    fi
+
+    delay=$((attempt * 5))
+    log_message "GitHub remote operation failed; retrying in ${delay}s (${attempt}/${max_attempts})."
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
 }
 
 automatic_recovery_wait_seconds() {
@@ -193,7 +227,7 @@ prepare_sync_cycle() {
     fi
   fi
 
-  if ! git -C "$ROOT_DIR" fetch "$REMOTE_NAME" "$REMOTE_BRANCH" >>"$LOG_FILE" 2>&1; then
+  if ! run_git_with_retry -C "$ROOT_DIR" fetch "$REMOTE_NAME" "$REMOTE_BRANCH" >>"$LOG_FILE" 2>&1; then
     log_message "Failed to fetch ${UPSTREAM_REF}."
     return 1
   fi
@@ -201,7 +235,7 @@ prepare_sync_cycle() {
   behind_count="$(git -C "$ROOT_DIR" rev-list --count HEAD.."$UPSTREAM_REF")"
   if [ "$behind_count" -gt 0 ]; then
     log_message "Remote ${UPSTREAM_REF} is ahead by ${behind_count} commit(s). Pulling with rebase."
-    if ! git -C "$ROOT_DIR" pull --rebase "$REMOTE_NAME" "$REMOTE_BRANCH" >>"$LOG_FILE" 2>&1; then
+    if ! run_git_with_retry -C "$ROOT_DIR" pull --rebase "$REMOTE_NAME" "$REMOTE_BRANCH" >>"$LOG_FILE" 2>&1; then
       log_message "Failed to pull ${UPSTREAM_REF} with rebase."
       return 1
     fi
@@ -236,6 +270,7 @@ while true; do
     # shellcheck disable=SC1090
     source "$ENV_FILE"
   fi
+  configure_git_ssh
   normalize_interval
   run_child sleep "$SYNC_INTERVAL_SECONDS" || exit 0
 done

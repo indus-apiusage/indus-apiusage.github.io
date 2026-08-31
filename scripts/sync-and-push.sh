@@ -24,15 +24,49 @@ if [ -f "$ENV_FILE" ]; then
   source "$ENV_FILE"
 fi
 
-if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
-  # Keep direct sync:publish calls on GitHub's more reliable SSH-over-443 path.
-  export GIT_SSH_COMMAND="ssh -i '${SYNC_GIT_SSH_KEY_PATH}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
-fi
+configure_git_ssh() {
+  local key_option=""
+
+  if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
+    local quoted_key
+    printf -v quoted_key '%q' "${SYNC_GIT_SSH_KEY_PATH}"
+    key_option="-i ${quoted_key} -o IdentitiesOnly=yes"
+  fi
+
+  # Keep direct sync:publish calls on GitHub's SSH-over-443 path and prevent
+  # a background process from waiting for interactive authentication.
+  export GIT_SSH_COMMAND="ssh ${key_option} -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
+}
+
+configure_git_ssh
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 REMOTE_NAME="${SYNC_GIT_REMOTE_NAME:-origin}"
 REMOTE_BRANCH="${SYNC_GIT_REMOTE_BRANCH:-$CURRENT_BRANCH}"
 UPSTREAM_REF="${REMOTE_NAME}/${REMOTE_BRANCH}"
+
+run_git_with_retry() {
+  local attempt=1 delay
+  local max_attempts="${SYNC_GIT_RETRY_ATTEMPTS:-3}"
+
+  if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+    max_attempts=3
+  fi
+
+  while true; do
+    if git "$@"; then
+      return 0
+    fi
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      return 1
+    fi
+
+    delay=$((attempt * 5))
+    echo "GitHub remote operation failed; retrying in ${delay}s (${attempt}/${max_attempts})."
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+}
 
 dashboard_data_has_changes() {
   [ -n "$(git status --porcelain -- docs/data/latest.json docs/data/widget.json)" ]
@@ -60,23 +94,23 @@ has_only_pending_dashboard_data() {
 sync_with_remote() {
   local behind_count
 
-  git fetch "$REMOTE_NAME" "$REMOTE_BRANCH"
+  run_git_with_retry fetch "$REMOTE_NAME" "$REMOTE_BRANCH"
   behind_count="$(git rev-list --count HEAD.."$UPSTREAM_REF")"
 
   if [ "$behind_count" -gt 0 ]; then
     echo "Remote branch ${UPSTREAM_REF} is ahead by ${behind_count} commit(s). Pulling with rebase."
-    git pull --rebase "$REMOTE_NAME" "$REMOTE_BRANCH"
+    run_git_with_retry pull --rebase "$REMOTE_NAME" "$REMOTE_BRANCH"
   fi
 }
 
 push_with_retry() {
-  if git push "$REMOTE_NAME" "HEAD:${REMOTE_BRANCH}"; then
+  if run_git_with_retry push "$REMOTE_NAME" "HEAD:${REMOTE_BRANCH}"; then
     return 0
   fi
 
   echo "Push failed after remote changed. Refreshing from ${UPSTREAM_REF} and retrying."
   sync_with_remote
-  git push "$REMOTE_NAME" "HEAD:${REMOTE_BRANCH}"
+  run_git_with_retry push "$REMOTE_NAME" "HEAD:${REMOTE_BRANCH}"
 }
 
 commit_dashboard_data() {
