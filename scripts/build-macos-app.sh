@@ -17,11 +17,21 @@ APP_PROVISIONING_PROFILE="${APP_PROVISIONING_PROFILE:-}"
 WIDGET_PROVISIONING_PROFILE="${WIDGET_PROVISIONING_PROFILE:-}"
 CODESIGN_TIMESTAMP="${CODESIGN_TIMESTAMP:-required}"
 
-if [[ -z "${CODESIGN_IDENTITY}" && -n "${DEVELOPMENT_TEAM}" ]]; then
-  CODESIGN_IDENTITY="$( (security find-identity -v -p codesigning 2>/dev/null || true) \
-    | sed -n 's/.*\"\(.*\)\".*/\1/p' \
-    | rg "\\(${DEVELOPMENT_TEAM}\\)$" \
-    | head -n 1 || true)"
+if [[ -z "${CODESIGN_IDENTITY}" ]]; then
+  identity_list="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+  if [[ -n "${DEVELOPMENT_TEAM}" ]]; then
+    CODESIGN_IDENTITY="$(printf '%s\n' "$identity_list" \
+      | sed -n 's/.*\"\(.*\)\".*/\1/p' \
+      | rg "\\(${DEVELOPMENT_TEAM}\\)$" \
+      | head -n 1 || true)"
+  else
+    # Prefer a real macOS-capable identity so a local rebuild does not silently
+    # produce an extension that macOS cannot register in the widget picker.
+    CODESIGN_IDENTITY="$(printf '%s\n' "$identity_list" \
+      | sed -n 's/.*\"\(.*\)\".*/\1/p' \
+      | rg '^(Apple Development|Mac Development|Developer ID Application):' \
+      | head -n 1 || true)"
+  fi
 fi
 
 swift build --package-path "${PACKAGE_DIR}" -c release
