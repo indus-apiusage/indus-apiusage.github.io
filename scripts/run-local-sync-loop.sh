@@ -8,7 +8,6 @@ LOCK_DIR="${ROOT_DIR}/work/sync-loop.lock"
 LOG_FILE="${ROOT_DIR}/work/sync-loop.log"
 ENV_FILE="${SYNC_ENV_FILE:-${ROOT_DIR}/work/sync.env}"
 SYNC_INTERVAL_SECONDS="${SYNC_INTERVAL_SECONDS:-300}"
-SYNC_GIT_RETRY_ATTEMPTS="${SYNC_GIT_RETRY_ATTEMPTS:-3}"
 
 normalize_interval() {
   if ! [[ "${SYNC_INTERVAL_SECONDS:-}" =~ ^[1-9][0-9]*$ ]]; then
@@ -23,27 +22,6 @@ if [ -f "$ENV_FILE" ]; then
   source "$ENV_FILE"
 fi
 normalize_interval
-
-configure_git_ssh() {
-  local key_option=""
-
-  if [ -n "${SYNC_GIT_SSH_KEY_PATH:-}" ]; then
-    local quoted_key
-    printf -v quoted_key '%q' "${SYNC_GIT_SSH_KEY_PATH}"
-    key_option="-i ${quoted_key} -o IdentitiesOnly=yes"
-  fi
-
-  # Use GitHub's SSH endpoint on 443 and fail fast instead of waiting for an
-  # interactive prompt in a background process.
-  export GIT_SSH_COMMAND="ssh ${key_option} -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new -o HostName=ssh.github.com -p 443"
-}
-
-configure_git_ssh
-
-CURRENT_BRANCH="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)"
-REMOTE_NAME="${SYNC_GIT_REMOTE_NAME:-origin}"
-REMOTE_BRANCH="${SYNC_GIT_REMOTE_BRANCH:-$CURRENT_BRANCH}"
-UPSTREAM_REF="${REMOTE_NAME}/${REMOTE_BRANCH}"
 
 acquire_lock() {
   local existing_pid
@@ -118,29 +96,6 @@ log_message() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG_FILE"
 }
 
-run_git_with_retry() {
-  local attempt=1 delay
-  local max_attempts="${SYNC_GIT_RETRY_ATTEMPTS:-3}"
-
-  if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
-    max_attempts=3
-  fi
-
-  while true; do
-    if git "$@"; then
-      return 0
-    fi
-    if [ "$attempt" -ge "$max_attempts" ]; then
-      return 1
-    fi
-
-    delay=$((attempt * 5))
-    log_message "GitHub remote operation failed; retrying in ${delay}s (${attempt}/${max_attempts})."
-    sleep "$delay"
-    attempt=$((attempt + 1))
-  done
-}
-
 automatic_recovery_wait_seconds() {
   AUTH_SESSION_CACHE_FILE="${ROOT_DIR}/work/auth-session-cache.json" node 2>/dev/null <<'NODE' || printf '0'
 const fs = require("fs");
@@ -185,62 +140,13 @@ run_child() {
   return "$status"
 }
 
-has_only_pending_dashboard_data() {
-  local change path saw_dashboard_data=0
-
-  while IFS= read -r change; do
-    [ -n "$change" ] || continue
-    path="${change:3}"
-    case "$path" in
-      docs/data/latest.json|docs/data/widget.json)
-        saw_dashboard_data=1
-        ;;
-      *)
-        return 1
-        ;;
-    esac
-  done < <(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)
-
-  [ "$saw_dashboard_data" -eq 1 ]
-}
-
 prepare_sync_cycle() {
-  local behind_count
-
-  if [ -n "$(git -C "$ROOT_DIR" status --porcelain)" ]; then
-    if ! has_only_pending_dashboard_data; then
-      log_message "Skipping sync cycle because the working tree is not clean."
-      git -C "$ROOT_DIR" status --short >>"$LOG_FILE" 2>&1
-      return 1
-    fi
-
-    log_message "Recovering pending dashboard data from an interrupted sync cycle."
-    if ! run_child bash "${ROOT_DIR}/scripts/sync-and-push.sh" --recover-pending-data >>"$LOG_FILE" 2>&1; then
-      log_message "Failed to recover pending dashboard data."
-      return 1
-    fi
-
-    if [ -n "$(git -C "$ROOT_DIR" status --porcelain)" ]; then
-      log_message "Recovery finished but the working tree is still not clean."
-      git -C "$ROOT_DIR" status --short >>"$LOG_FILE" 2>&1
-      return 1
-    fi
+  local changes
+  changes="$(git -C "$ROOT_DIR" status --short --untracked-files=all 2>/dev/null || true)"
+  if [ -n "$changes" ]; then
+    log_message "Local changes detected; preserving them while publishing dashboard data only."
+    printf '%s\n' "$changes" >>"$LOG_FILE"
   fi
-
-  if ! run_git_with_retry -C "$ROOT_DIR" fetch "$REMOTE_NAME" "$REMOTE_BRANCH" >>"$LOG_FILE" 2>&1; then
-    log_message "Failed to fetch ${UPSTREAM_REF}."
-    return 1
-  fi
-
-  behind_count="$(git -C "$ROOT_DIR" rev-list --count HEAD.."$UPSTREAM_REF")"
-  if [ "$behind_count" -gt 0 ]; then
-    log_message "Remote ${UPSTREAM_REF} is ahead by ${behind_count} commit(s). Pulling with rebase."
-    if ! run_git_with_retry -C "$ROOT_DIR" pull --rebase "$REMOTE_NAME" "$REMOTE_BRANCH" >>"$LOG_FILE" 2>&1; then
-      log_message "Failed to pull ${UPSTREAM_REF} with rebase."
-      return 1
-    fi
-  fi
-
   return 0
 }
 
@@ -258,10 +164,8 @@ while true; do
         run_child sleep "$recovery_wait_seconds" || exit 0
         continue
       fi
-      log_message "Sync cycle failed"
+      log_message "Sync cycle failed; the next cycle will retry"
     fi
-  else
-    log_message "Sync cycle skipped"
   fi
 
   # The App may update this file while the loop is sleeping. Re-read it before
@@ -270,7 +174,6 @@ while true; do
     # shellcheck disable=SC1090
     source "$ENV_FILE"
   fi
-  configure_git_ssh
   normalize_interval
   run_child sleep "$SYNC_INTERVAL_SECONDS" || exit 0
 done

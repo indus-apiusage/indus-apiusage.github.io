@@ -40,7 +40,7 @@ configure_git_ssh() {
 
 configure_git_ssh
 
-CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+CURRENT_BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || printf '%s' "${SYNC_GIT_REMOTE_BRANCH:-main}")"
 REMOTE_NAME="${SYNC_GIT_REMOTE_NAME:-origin}"
 REMOTE_BRANCH="${SYNC_GIT_REMOTE_BRANCH:-$CURRENT_BRANCH}"
 UPSTREAM_REF="${REMOTE_NAME}/${REMOTE_BRANCH}"
@@ -68,111 +68,122 @@ run_git_with_retry() {
   done
 }
 
-dashboard_data_has_changes() {
-  [ -n "$(git status --porcelain -- docs/data/latest.json docs/data/widget.json)" ]
-}
-
-has_only_pending_dashboard_data() {
-  local change path saw_dashboard_data=0
-
-  while IFS= read -r change; do
-    [ -n "$change" ] || continue
-    path="${change:3}"
-    case "$path" in
-      docs/data/latest.json|docs/data/widget.json)
-        saw_dashboard_data=1
-        ;;
-      *)
-        return 1
-        ;;
-    esac
-  done < <(git status --porcelain --untracked-files=all)
-
-  [ "$saw_dashboard_data" -eq 1 ]
+file_hash() {
+  local file_path="$1"
+  if [ -f "$file_path" ]; then
+    git hash-object "$file_path" 2>/dev/null || true
+  fi
 }
 
 sync_with_remote() {
-  local behind_count
-
   run_git_with_retry fetch "$REMOTE_NAME" "$REMOTE_BRANCH"
-  behind_count="$(git rev-list --count HEAD.."$UPSTREAM_REF")"
-
-  if [ "$behind_count" -gt 0 ]; then
-    echo "Remote branch ${UPSTREAM_REF} is ahead by ${behind_count} commit(s). Pulling with rebase."
-    run_git_with_retry pull --rebase "$REMOTE_NAME" "$REMOTE_BRANCH"
-  fi
 }
 
-push_with_retry() {
-  if run_git_with_retry push "$REMOTE_NAME" "HEAD:${REMOTE_BRANCH}"; then
-    return 0
-  fi
+dashboard_data_differs_from_ref() {
+  local ref="$1"
+  local path remote_hash local_hash
 
-  echo "Push failed after remote changed. Refreshing from ${UPSTREAM_REF} and retrying."
-  sync_with_remote
-  run_git_with_retry push "$REMOTE_NAME" "HEAD:${REMOTE_BRANCH}"
+  for path in docs/data/latest.json docs/data/widget.json; do
+    remote_hash="$(git rev-parse "${ref}:${path}" 2>/dev/null || true)"
+    local_hash="$(file_hash "$path")"
+    # A missing local snapshot is not a request to delete public data. It can
+    # happen while a user is repairing the checkout, so leave that path at
+    # the remote version and let the next successful crawl fill it locally.
+    if [ -n "$local_hash" ] && [ "$local_hash" != "$remote_hash" ]; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
-commit_dashboard_data() {
-  if ! dashboard_data_has_changes; then
-    return 0
-  fi
+create_dashboard_commit() {
+  local base_ref="$1"
+  local index_file tree commit
 
-  git config user.name "${GIT_COMMITTER_NAME:-github-actions[bot]}"
-  git config user.email "${GIT_COMMITTER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
-  git add docs/data/latest.json docs/data/widget.json
-  git commit -m "chore: refresh usage dashboard data"
-}
+  index_file="$(mktemp "${TMPDIR:-/tmp}/foropencode-sync-index.XXXXXX")"
 
-recover_pending_dashboard_data() {
-  if [ -z "$(git status --porcelain)" ]; then
-    echo "No pending dashboard data to recover."
-    return 0
-  fi
-
-  if ! has_only_pending_dashboard_data; then
-    echo "Refusing to recover pending data because the working tree has non-dashboard changes." >&2
-    git status --short >&2
+  if ! GIT_INDEX_FILE="$index_file" git read-tree "$base_ref"; then
+    rm -f "$index_file" "$index_file.lock"
     return 1
   fi
 
-  echo "Recovering dashboard data left by an interrupted sync cycle."
-  commit_dashboard_data
-  sync_with_remote
-  push_with_retry
+  for path in docs/data/latest.json docs/data/widget.json; do
+    if [ -e "$path" ]; then
+      if ! GIT_INDEX_FILE="$index_file" git add -- "$path"; then
+        rm -f "$index_file" "$index_file.lock"
+        return 1
+      fi
+    fi
+  done
+
+  if ! tree="$(GIT_INDEX_FILE="$index_file" git write-tree)"; then
+    rm -f "$index_file" "$index_file.lock"
+    return 1
+  fi
+
+  if ! commit="$(printf '%s\n' 'chore: refresh usage dashboard data' | git \
+      -c user.name="${GIT_COMMITTER_NAME:-github-actions[bot]}" \
+      -c user.email="${GIT_COMMITTER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}" \
+      commit-tree "$tree" -p "$base_ref")"; then
+    rm -f "$index_file" "$index_file.lock"
+    return 1
+  fi
+
+  rm -f "$index_file" "$index_file.lock"
+  printf '%s' "$commit"
 }
 
-ensure_clean_worktree() {
-  if [ -z "$(git status --porcelain)" ]; then
-    return 0
+publish_dashboard_data() {
+  local attempt=1
+  local max_attempts="${SYNC_GIT_RETRY_ATTEMPTS:-3}"
+  local commit
+  local delay
+
+  if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+    max_attempts=3
   fi
 
-  if ! has_only_pending_dashboard_data; then
-    echo "Refusing to sync because the working tree is not clean." >&2
-    git status --short >&2
-    exit 1
-  fi
+  while [ "$attempt" -le "$max_attempts" ]; do
+    sync_with_remote
+    if ! dashboard_data_differs_from_ref "$UPSTREAM_REF"; then
+      echo "No dashboard data changes detected."
+      return 0
+    fi
 
-  # A previous cycle may have been stopped after generating the public data
-  # but before committing it. Recover only those known generated files.
-  recover_pending_dashboard_data
+    # Always use the fetched remote tip as the parent. This prevents a local
+    # unpublished source commit from being pushed as a side effect of a data
+    # refresh, while still allowing the two generated files to be published.
+    if ! commit="$(create_dashboard_commit "$UPSTREAM_REF")"; then
+      echo "Unable to create an isolated dashboard data commit." >&2
+      return 1
+    fi
+
+    if git push "$REMOTE_NAME" "$commit:refs/heads/$REMOTE_BRANCH"; then
+      echo "Published dashboard data commit ${commit}."
+      return 0
+    fi
+
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      delay=$((attempt * 5))
+      echo "Remote changed during publish; retrying with a fresh base in ${delay}s (${attempt}/${max_attempts})." >&2
+      sleep "$delay"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "Dashboard data push failed after ${max_attempts} attempt(s)." >&2
+  return 1
 }
 
 if [ "$MODE" = "--recover-pending-data" ]; then
-  recover_pending_dashboard_data
+  publish_dashboard_data
   exit 0
 fi
 
-ensure_clean_worktree
-sync_with_remote
-
+# The crawler does not read Git history. Fetch once, after it has generated the
+# snapshots, so each cycle uses the freshest remote tip while avoiding a
+# redundant network round-trip before the crawl.
 npm run sync
 
-if ! dashboard_data_has_changes; then
-  echo "No dashboard data changes detected."
-  exit 0
-fi
-
-commit_dashboard_data
-sync_with_remote
-push_with_retry
+publish_dashboard_data

@@ -5,8 +5,84 @@ import Security
 import SwiftUI
 import WidgetKit
 
+final class IndusUsageConsoleAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private weak var mainWindow: NSWindow?
+    private var allowWindowClose = false
+
+    func attach(to window: NSWindow) {
+        if mainWindow !== window {
+            mainWindow = window
+            window.identifier = NSUserInterfaceItemIdentifier("main")
+            window.delegate = self
+        }
+    }
+
+    func showMainWindow() {
+        guard let window = mainWindow ?? NSApp.windows.first(where: {
+            $0.title == "Indus Usage Console"
+        }) else {
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        showMainWindow()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Command-Q and the menu bar's Quit action must still be able to exit.
+        allowWindowClose = true
+        return .terminateNow
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !allowWindowClose else { return true }
+
+        // Treat the red close button as "hide to background". Keeping the
+        // window alive preserves the SwiftUI model and the sync subprocess.
+        sender.orderOut(nil)
+        NSApp.hide(nil)
+        return false
+    }
+}
+
+private struct MainWindowLifecycleBridge: NSViewRepresentable {
+    let appDelegate: IndusUsageConsoleAppDelegate
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        let appDelegate = appDelegate
+        if let window = nsView.window {
+            appDelegate.attach(to: window)
+        } else {
+            DispatchQueue.main.async {
+                guard let window = nsView.window else { return }
+                appDelegate.attach(to: window)
+            }
+        }
+    }
+}
+
 struct IndusUsageConsoleApp: App {
     @StateObject private var model = ConsoleModel()
+    @NSApplicationDelegateAdaptor(IndusUsageConsoleAppDelegate.self)
+    private var appDelegate
 
     var body: some Scene {
         // The widget deep link should reuse this one console window instead of
@@ -14,10 +90,10 @@ struct IndusUsageConsoleApp: App {
         Window("Indus Usage Console", id: "main") {
             ConsoleRootView(model: model)
                 .preferredColorScheme(.light)
+                .background(MainWindowLifecycleBridge(appDelegate: appDelegate))
                 .onOpenURL { _ in
                     model.section = .overview
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                    appDelegate.showMainWindow()
                 }
         }
         .windowStyle(.hiddenTitleBar)
@@ -25,6 +101,17 @@ struct IndusUsageConsoleApp: App {
         // manage the window frame instead of recomputing content-size constraints
         // on every animation tick.
         .windowResizability(.automatic)
+
+        MenuBarExtra("Indus Usage Console", systemImage: "chart.bar.xaxis") {
+            Button("显示控制台") {
+                appDelegate.showMainWindow()
+            }
+            Divider()
+            Button("退出 Indus Usage Console") {
+                NSApp.terminate(nil)
+            }
+        }
+        .menuBarExtraStyle(.menu)
 
     }
 }

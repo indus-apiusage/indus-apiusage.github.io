@@ -21,12 +21,14 @@ async function createRecoveryRepository() {
 
   await fs.mkdir(path.join(repoDir, "scripts"), { recursive: true });
   await fs.mkdir(path.join(repoDir, "docs", "data"), { recursive: true });
+  await fs.mkdir(path.join(repoDir, "src"), { recursive: true });
   await fs.copyFile(
     path.join(rootDir, "scripts", "sync-and-push.sh"),
     path.join(repoDir, "scripts", "sync-and-push.sh"),
   );
   await fs.writeFile(path.join(repoDir, "docs", "data", "latest.json"), "{}\n");
   await fs.writeFile(path.join(repoDir, "docs", "data", "widget.json"), "{}\n");
+  await fs.writeFile(path.join(repoDir, "src", "app.txt"), "original source\n");
 
   await git(["init", "--bare", remoteDir]);
   await git(["init", "--initial-branch=main"], { cwd: repoDir });
@@ -37,11 +39,11 @@ async function createRecoveryRepository() {
   await git(["remote", "add", "origin", remoteDir], { cwd: repoDir });
   await git(["push", "-u", "origin", "main"], { cwd: repoDir });
 
-  return { tempDir, repoDir };
+  return { tempDir, repoDir, remoteDir };
 }
 
 test("sync-and-push loads the App SYNC_ENV_FILE before invoking npm", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "foropencode-sync-env-"));
+  const { tempDir, repoDir } = await createRecoveryRepository();
   const binDir = path.join(tempDir, "bin");
   const environmentFile = path.join(tempDir, "app-sync.env");
   const captureFile = path.join(tempDir, "captured-accounts.json");
@@ -68,19 +70,6 @@ test("sync-and-push loads the App SYNC_ENV_FILE before invoking npm", async () =
     { encoding: "utf8", mode: 0o600 },
   );
   await fs.writeFile(
-    path.join(binDir, "git"),
-    [
-      "#!/usr/bin/env bash",
-      "case \"${1:-}\" in",
-      "  rev-parse) printf 'main\\n' ;;",
-      "  rev-list) printf '0\\n' ;;",
-      "  *) exit 0 ;;",
-      "esac",
-      "",
-    ].join("\n"),
-    { encoding: "utf8", mode: 0o755 },
-  );
-  await fs.writeFile(
     path.join(binDir, "npm"),
     [
       "#!/usr/bin/env bash",
@@ -95,7 +84,7 @@ test("sync-and-push loads the App SYNC_ENV_FILE before invoking npm", async () =
 
   try {
     await execFileAsync("bash", [path.join(rootDir, "scripts", "sync-and-push.sh")], {
-      cwd: rootDir,
+      cwd: repoDir,
       env: {
         ...process.env,
         PATH: `${binDir}:${process.env.PATH}`,
@@ -111,7 +100,7 @@ test("sync-and-push loads the App SYNC_ENV_FILE before invoking npm", async () =
 });
 
 test("sync-and-push recovers only generated dashboard data after an interrupted cycle", async () => {
-  const { tempDir, repoDir } = await createRecoveryRepository();
+  const { tempDir, repoDir, remoteDir } = await createRecoveryRepository();
 
   try {
     await fs.writeFile(path.join(repoDir, "docs", "data", "latest.json"), '{"updated":true}\n');
@@ -122,34 +111,79 @@ test("sync-and-push recovers only generated dashboard data after an interrupted 
     });
 
     const { stdout } = await git(["status", "--porcelain"], { cwd: repoDir });
-    assert.equal(stdout, "");
+    assert.match(stdout, /docs\/data\/latest\.json/);
+    assert.match(stdout, /docs\/data\/widget\.json/);
 
-    const remoteLog = await git(["--git-dir", path.join(tempDir, "remote.git"), "log", "--oneline", "main"]);
+    const remoteLog = await git(["--git-dir", remoteDir, "log", "--oneline", "main"]);
     assert.match(remoteLog.stdout, /chore: refresh usage dashboard data/);
+    const remoteData = await git(["--git-dir", remoteDir, "show", "main:docs/data/latest.json"]);
+    assert.equal(remoteData.stdout, '{"updated":true}\n');
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("sync-and-push refuses recovery when non-dashboard changes are present", async () => {
-  const { tempDir, repoDir } = await createRecoveryRepository();
+test("sync-and-push preserves non-dashboard changes while recovering generated data", async () => {
+  const { tempDir, repoDir, remoteDir } = await createRecoveryRepository();
 
   try {
     await fs.writeFile(path.join(repoDir, "docs", "data", "latest.json"), '{"updated":true}\n');
-    await fs.writeFile(path.join(repoDir, "README.md"), "do not auto-commit this\n");
+    await fs.writeFile(path.join(repoDir, "src", "app.txt"), "local source edit\n");
 
-    await assert.rejects(
-      execFileAsync("bash", ["scripts/sync-and-push.sh", "--recover-pending-data"], { cwd: repoDir }),
-      (error) => {
-        assert.equal(error.code, 1);
-        assert.match(error.stderr, /non-dashboard changes/);
-        return true;
-      },
-    );
+    await execFileAsync("bash", ["scripts/sync-and-push.sh", "--recover-pending-data"], {
+      cwd: repoDir,
+    });
 
     const { stdout } = await git(["status", "--porcelain"], { cwd: repoDir });
     assert.match(stdout, /docs\/data\/latest\.json/);
-    assert.match(stdout, /README\.md/);
+    assert.match(stdout, /src\/app\.txt/);
+    assert.equal(await fs.readFile(path.join(repoDir, "src", "app.txt"), "utf8"), "local source edit\n");
+
+    const remoteData = await git(["--git-dir", remoteDir, "show", "main:docs/data/latest.json"]);
+    assert.equal(remoteData.stdout, '{"updated":true}\n');
+    const remoteSource = await git(["--git-dir", remoteDir, "show", "main:src/app.txt"]);
+    assert.equal(remoteSource.stdout, "original source\n");
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("sync-and-push runs the crawler with a dirty source tree and publishes data only", async () => {
+  const { tempDir, repoDir, remoteDir } = await createRecoveryRepository();
+  const binDir = path.join(tempDir, "bin");
+
+  try {
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.writeFile(path.join(repoDir, "src", "app.txt"), "unfinished local edit\n");
+    await fs.writeFile(
+      path.join(binDir, "npm"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "printf '{\"synced\":true}\\n' > docs/data/latest.json",
+        "printf '{\"widget\":true}\\n' > docs/data/widget.json",
+        "",
+      ].join("\n"),
+      { encoding: "utf8", mode: 0o755 },
+    );
+
+    await execFileAsync("bash", ["scripts/sync-and-push.sh"], {
+      cwd: repoDir,
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH}`,
+      },
+    });
+
+    const localSource = await fs.readFile(path.join(repoDir, "src", "app.txt"), "utf8");
+    assert.equal(localSource, "unfinished local edit\n");
+    const localHead = await git(["log", "-1", "--format=%s"], { cwd: repoDir });
+    assert.equal(localHead.stdout.trim(), "initial");
+
+    const remoteData = await git(["--git-dir", remoteDir, "show", "main:docs/data/latest.json"]);
+    assert.equal(remoteData.stdout, '{"synced":true}\n');
+    const remoteSource = await git(["--git-dir", remoteDir, "show", "main:src/app.txt"]);
+    assert.equal(remoteSource.stdout, "original source\n");
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
