@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-15T07:26:03.517Z",
+  "generatedAt": "2026-10-15T07:41:23.086Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -83,14 +83,14 @@
       "username": "JunhaoCai27",
       "displayName": "JunhaoCai27",
       "group": "default",
-      "requestCount": 33708,
-      "remainingRawQuota": 45813606,
-      "remainingPrimaryBalance": 91.627212,
-      "usedRawQuota": 104175833,
-      "usedPrimaryCost": 208.351666,
+      "requestCount": 33760,
+      "remainingRawQuota": 45679254,
+      "remainingPrimaryBalance": 91.358508,
+      "usedRawQuota": 104310185,
+      "usedPrimaryCost": 208.62037,
       "totalRawQuota": 149989439,
       "totalPrimaryQuota": 299.978878,
-      "utilizationRate": 0.694554,
+      "utilizationRate": 0.69545,
       "gptPlus": {
         "key": "gpt_plus",
         "ratio": 0.1,
@@ -100,9 +100,9 @@
   ],
   "summary": {
     "totalDays": 30,
-    "totalRequests": 17712,
-    "totalRawQuota": 63493731,
-    "totalPrimaryCost": 126.987462,
+    "totalRequests": 17765,
+    "totalRawQuota": 63628083,
+    "totalPrimaryCost": 127.256166,
     "totalSecondaryCost": 0,
     "activePeople": 5,
     "activeTokens": 5,
@@ -2742,13 +2742,13 @@
     },
     {
       "date": "2026-10-15",
-      "requests": 648,
-      "rawQuota": 2606098,
-      "primaryCost": 5.212196,
+      "requests": 701,
+      "rawQuota": 2740450,
+      "primaryCost": 5.4809,
       "secondaryCost": 0,
-      "promptTokens": 68662690,
-      "completionTokens": 619372,
-      "cacheReadTokens": 61288630,
+      "promptTokens": 74369424,
+      "completionTokens": 660981,
+      "cacheReadTokens": 66708790,
       "cacheWriteTokens": 658560,
       "people": [
         {
@@ -2757,23 +2757,23 @@
           "tokenNames": [
             "cjh"
           ],
-          "requests": 620,
-          "rawQuota": 2568232,
-          "primaryCost": 5.136464,
+          "requests": 650,
+          "rawQuota": 2680320,
+          "primaryCost": 5.36064,
           "secondaryCost": 0,
-          "promptTokens": 66607022,
-          "completionTokens": 610328,
-          "cacheReadTokens": 59462710,
+          "promptTokens": 70094852,
+          "completionTokens": 647852,
+          "cacheReadTokens": 62741686,
           "cacheWriteTokens": 658560,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 618,
-              "rawQuota": 2565037,
-              "primaryCost": 5.130074,
+              "requests": 648,
+              "rawQuota": 2677125,
+              "primaryCost": 5.35425,
               "secondaryCost": 0,
-              "promptTokens": 66575846,
-              "completionTokens": 610198
+              "promptTokens": 70063676,
+              "completionTokens": 647722
             },
             {
               "name": "gpt-6-luna",
@@ -2792,32 +2792,32 @@
           "tokenNames": [
             "QGC"
           ],
-          "requests": 28,
-          "rawQuota": 37866,
-          "primaryCost": 0.075732,
+          "requests": 51,
+          "rawQuota": 60130,
+          "primaryCost": 0.12026,
           "secondaryCost": 0,
-          "promptTokens": 2055668,
-          "completionTokens": 9044,
-          "cacheReadTokens": 1825920,
+          "promptTokens": 4274572,
+          "completionTokens": 13129,
+          "cacheReadTokens": 3967104,
           "cacheWriteTokens": 0,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 27,
-              "rawQuota": 37336,
-              "primaryCost": 0.074672,
+              "requests": 47,
+              "rawQuota": 52439,
+              "primaryCost": 0.104878,
               "secondaryCost": 0,
-              "promptTokens": 2031805,
-              "completionTokens": 8859
+              "promptTokens": 4143201,
+              "completionTokens": 12712
             },
             {
               "name": "codex-auto-review",
-              "requests": 1,
-              "rawQuota": 530,
-              "primaryCost": 0.00106,
+              "requests": 4,
+              "rawQuota": 7691,
+              "primaryCost": 0.015382,
               "secondaryCost": 0,
-              "promptTokens": 23863,
-              "completionTokens": 185
+              "promptTokens": 131371,
+              "completionTokens": 417
             }
           ]
         }
@@ -2825,12 +2825,21 @@
       "models": [
         {
           "name": "gpt-6.1-sol",
-          "requests": 645,
-          "rawQuota": 2602373,
-          "primaryCost": 5.204746,
+          "requests": 695,
+          "rawQuota": 2729564,
+          "primaryCost": 5.459128,
           "secondaryCost": 0,
-          "promptTokens": 68607651,
-          "completionTokens": 619057
+          "promptTokens": 74206877,
+          "completionTokens": 660434
+        },
+        {
+          "name": "codex-auto-review",
+          "requests": 4,
+          "rawQuota": 7691,
+          "primaryCost": 0.015382,
+          "secondaryCost": 0,
+          "promptTokens": 131371,
+          "completionTokens": 417
         },
         {
           "name": "gpt-6-luna",
@@ -2840,15 +2849,6 @@
           "secondaryCost": 0,
           "promptTokens": 31176,
           "completionTokens": 130
-        },
-        {
-          "name": "codex-auto-review",
-          "requests": 1,
-          "rawQuota": 530,
-          "primaryCost": 0.00106,
-          "secondaryCost": 0,
-          "promptTokens": 23863,
-          "completionTokens": 185
         }
       ]
     }
@@ -2861,35 +2861,35 @@
         "cjh"
       ],
       "totals": {
-        "requests": 15340,
-        "rawQuota": 52632876,
-        "primaryCost": 105.265752,
+        "requests": 15370,
+        "rawQuota": 52744964,
+        "primaryCost": 105.489928,
         "secondaryCost": 0,
-        "promptTokens": 1823348263,
-        "completionTokens": 10122256,
-        "cacheReadTokens": 1663875401,
+        "promptTokens": 1826836093,
+        "completionTokens": 10159780,
+        "cacheReadTokens": 1667154377,
         "cacheWriteTokens": 2391378
       },
       "days": [
         {
           "date": "2026-10-15",
-          "requests": 620,
-          "rawQuota": 2568232,
-          "primaryCost": 5.136464,
+          "requests": 650,
+          "rawQuota": 2680320,
+          "primaryCost": 5.36064,
           "secondaryCost": 0,
-          "promptTokens": 66607022,
-          "completionTokens": 610328,
-          "cacheReadTokens": 59462710,
+          "promptTokens": 70094852,
+          "completionTokens": 647852,
+          "cacheReadTokens": 62741686,
           "cacheWriteTokens": 658560,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 618,
-              "rawQuota": 2565037,
-              "primaryCost": 5.130074,
+              "requests": 648,
+              "rawQuota": 2677125,
+              "primaryCost": 5.35425,
               "secondaryCost": 0,
-              "promptTokens": 66575846,
-              "completionTokens": 610198
+              "promptTokens": 70063676,
+              "completionTokens": 647722
             },
             {
               "name": "gpt-6-luna",
@@ -4220,44 +4220,44 @@
         "QGC"
       ],
       "totals": {
-        "requests": 167,
-        "rawQuota": 223866,
-        "primaryCost": 0.447732,
+        "requests": 190,
+        "rawQuota": 246130,
+        "primaryCost": 0.49226,
         "secondaryCost": 0,
-        "promptTokens": 16794773,
-        "completionTokens": 53290,
-        "cacheReadTokens": 15623296,
+        "promptTokens": 19013677,
+        "completionTokens": 57375,
+        "cacheReadTokens": 17764480,
         "cacheWriteTokens": 0
       },
       "days": [
         {
           "date": "2026-10-15",
-          "requests": 28,
-          "rawQuota": 37866,
-          "primaryCost": 0.075732,
+          "requests": 51,
+          "rawQuota": 60130,
+          "primaryCost": 0.12026,
           "secondaryCost": 0,
-          "promptTokens": 2055668,
-          "completionTokens": 9044,
-          "cacheReadTokens": 1825920,
+          "promptTokens": 4274572,
+          "completionTokens": 13129,
+          "cacheReadTokens": 3967104,
           "cacheWriteTokens": 0,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 27,
-              "rawQuota": 37336,
-              "primaryCost": 0.074672,
+              "requests": 47,
+              "rawQuota": 52439,
+              "primaryCost": 0.104878,
               "secondaryCost": 0,
-              "promptTokens": 2031805,
-              "completionTokens": 8859
+              "promptTokens": 4143201,
+              "completionTokens": 12712
             },
             {
               "name": "codex-auto-review",
-              "requests": 1,
-              "rawQuota": 530,
-              "primaryCost": 0.00106,
+              "requests": 4,
+              "rawQuota": 7691,
+              "primaryCost": 0.015382,
               "secondaryCost": 0,
-              "promptTokens": 23863,
-              "completionTokens": 185
+              "promptTokens": 131371,
+              "completionTokens": 417
             }
           ]
         },
@@ -5901,23 +5901,23 @@
       "tokenNames": [
         "cjh"
       ],
-      "requests": 620,
-      "rawQuota": 2568232,
-      "primaryCost": 5.136464,
+      "requests": 650,
+      "rawQuota": 2680320,
+      "primaryCost": 5.36064,
       "secondaryCost": 0,
-      "promptTokens": 66607022,
-      "completionTokens": 610328,
-      "cacheReadTokens": 59462710,
+      "promptTokens": 70094852,
+      "completionTokens": 647852,
+      "cacheReadTokens": 62741686,
       "cacheWriteTokens": 658560,
       "models": [
         {
           "name": "gpt-6.1-sol",
-          "requests": 618,
-          "rawQuota": 2565037,
-          "primaryCost": 5.130074,
+          "requests": 648,
+          "rawQuota": 2677125,
+          "primaryCost": 5.35425,
           "secondaryCost": 0,
-          "promptTokens": 66575846,
-          "completionTokens": 610198
+          "promptTokens": 70063676,
+          "completionTokens": 647722
         },
         {
           "name": "gpt-6-luna",
@@ -5937,32 +5937,32 @@
       "tokenNames": [
         "QGC"
       ],
-      "requests": 28,
-      "rawQuota": 37866,
-      "primaryCost": 0.075732,
+      "requests": 51,
+      "rawQuota": 60130,
+      "primaryCost": 0.12026,
       "secondaryCost": 0,
-      "promptTokens": 2055668,
-      "completionTokens": 9044,
-      "cacheReadTokens": 1825920,
+      "promptTokens": 4274572,
+      "completionTokens": 13129,
+      "cacheReadTokens": 3967104,
       "cacheWriteTokens": 0,
       "models": [
         {
           "name": "gpt-6.1-sol",
-          "requests": 27,
-          "rawQuota": 37336,
-          "primaryCost": 0.074672,
+          "requests": 47,
+          "rawQuota": 52439,
+          "primaryCost": 0.104878,
           "secondaryCost": 0,
-          "promptTokens": 2031805,
-          "completionTokens": 8859
+          "promptTokens": 4143201,
+          "completionTokens": 12712
         },
         {
           "name": "codex-auto-review",
-          "requests": 1,
-          "rawQuota": 530,
-          "primaryCost": 0.00106,
+          "requests": 4,
+          "rawQuota": 7691,
+          "primaryCost": 0.015382,
           "secondaryCost": 0,
-          "promptTokens": 23863,
-          "completionTokens": 185
+          "promptTokens": 131371,
+          "completionTokens": 417
         }
       ]
     }
