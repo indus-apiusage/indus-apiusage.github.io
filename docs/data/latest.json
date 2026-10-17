@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-17T15:50:51.304Z",
+  "generatedAt": "2026-10-17T16:06:01.261Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
     "timezone": "Asia/Shanghai",
     "lookbackDays": 30,
     "dateRange": {
-      "start": "2026-09-18",
-      "end": "2026-10-17"
+      "start": "2026-09-20",
+      "end": "2026-10-18"
     }
   },
   "status": {
@@ -99,114 +99,16 @@
     }
   ],
   "summary": {
-    "totalDays": 30,
-    "totalRequests": 18745,
-    "totalRawQuota": 64509664,
-    "totalPrimaryCost": 129.019328,
+    "totalDays": 29,
+    "totalRequests": 18630,
+    "totalRawQuota": 63597908,
+    "totalPrimaryCost": 127.195816,
     "totalSecondaryCost": 0,
-    "activePeople": 5,
-    "activeTokens": 5,
-    "latestDate": "2026-10-17"
+    "activePeople": 4,
+    "activeTokens": 4,
+    "latestDate": "2026-10-18"
   },
   "days": [
-    {
-      "date": "2026-09-18",
-      "requests": 115,
-      "rawQuota": 911756,
-      "primaryCost": 1.823512,
-      "secondaryCost": 0,
-      "promptTokens": 19976303,
-      "completionTokens": 111230,
-      "cacheReadTokens": 18977792,
-      "cacheWriteTokens": 0,
-      "people": [
-        {
-          "personId": "grok",
-          "displayName": "grok",
-          "tokenNames": [
-            "grok"
-          ],
-          "requests": 112,
-          "rawQuota": 894982,
-          "primaryCost": 1.789964,
-          "secondaryCost": 0,
-          "promptTokens": 19867889,
-          "completionTokens": 110661,
-          "cacheReadTokens": 18977792,
-          "cacheWriteTokens": 0,
-          "models": [
-            {
-              "name": "grok-4.6",
-              "requests": 112,
-              "rawQuota": 894982,
-              "primaryCost": 1.789964,
-              "secondaryCost": 0,
-              "promptTokens": 19867889,
-              "completionTokens": 110661
-            }
-          ]
-        },
-        {
-          "personId": "cjh",
-          "displayName": "蔡俊豪",
-          "tokenNames": [
-            "cjh"
-          ],
-          "requests": 3,
-          "rawQuota": 16774,
-          "primaryCost": 0.033548,
-          "secondaryCost": 0,
-          "promptTokens": 108414,
-          "completionTokens": 569,
-          "cacheReadTokens": 0,
-          "cacheWriteTokens": 0,
-          "models": [
-            {
-              "name": "gpt-5.6-terra",
-              "requests": 3,
-              "rawQuota": 16774,
-              "primaryCost": 0.033548,
-              "secondaryCost": 0,
-              "promptTokens": 108414,
-              "completionTokens": 569
-            }
-          ]
-        }
-      ],
-      "models": [
-        {
-          "name": "grok-4.6",
-          "requests": 112,
-          "rawQuota": 894982,
-          "primaryCost": 1.789964,
-          "secondaryCost": 0,
-          "promptTokens": 19867889,
-          "completionTokens": 110661
-        },
-        {
-          "name": "gpt-5.6-terra",
-          "requests": 3,
-          "rawQuota": 16774,
-          "primaryCost": 0.033548,
-          "secondaryCost": 0,
-          "promptTokens": 108414,
-          "completionTokens": 569
-        }
-      ]
-    },
-    {
-      "date": "2026-09-19",
-      "requests": 0,
-      "rawQuota": 0,
-      "primaryCost": 0,
-      "secondaryCost": 0,
-      "promptTokens": 0,
-      "completionTokens": 0,
-      "cacheReadTokens": 0,
-      "cacheWriteTokens": 0,
-      "people": [],
-      "models": []
-    },
     {
       "date": "2026-09-20",
       "requests": 308,
@@ -2782,6 +2684,19 @@
           "completionTokens": 28
         }
       ]
+    },
+    {
+      "date": "2026-10-18",
+      "requests": 0,
+      "rawQuota": 0,
+      "primaryCost": 0,
+      "secondaryCost": 0,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "people": [],
+      "models": []
     }
   ],
   "people": [
@@ -2792,12 +2707,12 @@
         "cjh"
       ],
       "totals": {
-        "requests": 15739,
-        "rawQuota": 54525311,
-        "primaryCost": 109.050622,
+        "requests": 15736,
+        "rawQuota": 54508537,
+        "primaryCost": 109.017074,
         "secondaryCost": 0,
-        "promptTokens": 1879947858,
-        "completionTokens": 10649904,
+        "promptTokens": 1879839444,
+        "completionTokens": 10649335,
         "cacheReadTokens": 1715248329,
         "cacheWriteTokens": 2391378
       },
@@ -3701,28 +3616,6 @@
               "completionTokens": 117
             }
           ]
-        },
-        {
-          "date": "2026-09-18",
-          "requests": 3,
-          "rawQuota": 16774,
-          "primaryCost": 0.033548,
-          "secondaryCost": 0,
-          "promptTokens": 108414,
-          "completionTokens": 569,
-          "cacheReadTokens": 0,
-          "cacheWriteTokens": 0,
-          "models": [
-            {
-              "name": "gpt-5.6-terra",
-              "requests": 3,
-              "rawQuota": 16774,
-              "primaryCost": 0.033548,
-              "secondaryCost": 0,
-              "promptTokens": 108414,
-              "completionTokens": 569
-            }
-          ]
         }
       ]
     },
@@ -4137,47 +4030,6 @@
       ]
     },
     {
-      "personId": "grok",
-      "displayName": "grok",
-      "tokenNames": [
-        "grok"
-      ],
-      "totals": {
-        "requests": 112,
-        "rawQuota": 894982,
-        "primaryCost": 1.789964,
-        "secondaryCost": 0,
-        "promptTokens": 19867889,
-        "completionTokens": 110661,
-        "cacheReadTokens": 18977792,
-        "cacheWriteTokens": 0
-      },
-      "days": [
-        {
-          "date": "2026-09-18",
-          "requests": 112,
-          "rawQuota": 894982,
-          "primaryCost": 1.789964,
-          "secondaryCost": 0,
-          "promptTokens": 19867889,
-          "completionTokens": 110661,
-          "cacheReadTokens": 18977792,
-          "cacheWriteTokens": 0,
-          "models": [
-            {
-              "name": "grok-4.6",
-              "requests": 112,
-              "rawQuota": 894982,
-              "primaryCost": 1.789964,
-              "secondaryCost": 0,
-              "promptTokens": 19867889,
-              "completionTokens": 110661
-            }
-          ]
-        }
-      ]
-    },
-    {
       "personId": "sqz",
       "displayName": "sqz",
       "tokenNames": [
@@ -4229,60 +4081,6 @@
     }
   ],
   "dailyPersonRows": [
-    {
-      "date": "2026-09-18",
-      "personId": "grok",
-      "displayName": "grok",
-      "tokenNames": [
-        "grok"
-      ],
-      "requests": 112,
-      "rawQuota": 894982,
-      "primaryCost": 1.789964,
-      "secondaryCost": 0,
-      "promptTokens": 19867889,
-      "completionTokens": 110661,
-      "cacheReadTokens": 18977792,
-      "cacheWriteTokens": 0,
-      "models": [
-        {
-          "name": "grok-4.6",
-          "requests": 112,
-          "rawQuota": 894982,
-          "primaryCost": 1.789964,
-          "secondaryCost": 0,
-          "promptTokens": 19867889,
-          "completionTokens": 110661
-        }
-      ]
-    },
-    {
-      "date": "2026-09-18",
-      "personId": "cjh",
-      "displayName": "蔡俊豪",
-      "tokenNames": [
-        "cjh"
-      ],
-      "requests": 3,
-      "rawQuota": 16774,
-      "primaryCost": 0.033548,
-      "secondaryCost": 0,
-      "promptTokens": 108414,
-      "completionTokens": 569,
-      "cacheReadTokens": 0,
-      "cacheWriteTokens": 0,
-      "models": [
-        {
-          "name": "gpt-5.6-terra",
-          "requests": 3,
-          "rawQuota": 16774,
-          "primaryCost": 0.033548,
-          "secondaryCost": 0,
-          "promptTokens": 108414,
-          "completionTokens": 569
-        }
-      ]
-    },
     {
       "date": "2026-09-20",
       "personId": "cjh",
@@ -5788,7 +5586,6 @@
     }
   ],
   "warnings": [
-    "Token \"grok\" is not mapped in config/people.json and will be shown as-is.",
     "Token \"QGC\" is not mapped in config/people.json and will be shown as-is.",
     "Token \"sqz\" is not mapped in config/people.json and will be shown as-is."
   ]
