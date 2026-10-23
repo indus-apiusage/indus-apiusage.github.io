@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T13:27:20.390Z",
+  "generatedAt": "2026-10-23T13:42:31.855Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -83,14 +83,14 @@
       "username": "JunhaoCai27",
       "displayName": "JunhaoCai27",
       "group": "default",
-      "requestCount": 39710,
-      "remainingRawQuota": 21391065,
-      "remainingPrimaryBalance": 42.78213,
-      "usedRawQuota": 128598374,
-      "usedPrimaryCost": 257.196748,
+      "requestCount": 39712,
+      "remainingRawQuota": 21384929,
+      "remainingPrimaryBalance": 42.769858,
+      "usedRawQuota": 128604510,
+      "usedPrimaryCost": 257.20902,
       "totalRawQuota": 149989439,
       "totalPrimaryQuota": 299.978878,
-      "utilizationRate": 0.857383,
+      "utilizationRate": 0.857424,
       "gptPlus": {
         "key": "gpt_plus",
         "ratio": 0.1,
@@ -100,9 +100,9 @@
   ],
   "summary": {
     "totalDays": 30,
-    "totalRequests": 20887,
-    "totalRawQuota": 74648304,
-    "totalPrimaryCost": 149.296608,
+    "totalRequests": 20889,
+    "totalRawQuota": 74654440,
+    "totalPrimaryCost": 149.30888,
     "totalSecondaryCost": 0,
     "activePeople": 5,
     "activeTokens": 6,
@@ -3121,13 +3121,13 @@
     },
     {
       "date": "2026-10-23",
-      "requests": 289,
-      "rawQuota": 1430044,
-      "primaryCost": 2.860088,
+      "requests": 291,
+      "rawQuota": 1436180,
+      "primaryCost": 2.87236,
       "secondaryCost": 0,
-      "promptTokens": 29283724,
-      "completionTokens": 230426,
-      "cacheReadTokens": 24235520,
+      "promptTokens": 29313967,
+      "completionTokens": 230466,
+      "cacheReadTokens": 24244864,
       "cacheWriteTokens": 0,
       "people": [
         {
@@ -3166,6 +3166,69 @@
           ]
         },
         {
+          "personId": "unknown",
+          "displayName": "工业异常",
+          "tokenNames": [
+            "工业异常",
+            "水下具身"
+          ],
+          "requests": 18,
+          "rawQuota": 33466,
+          "primaryCost": 0.066932,
+          "secondaryCost": 0,
+          "promptTokens": 450714,
+          "completionTokens": 4712,
+          "cacheReadTokens": 190976,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-6.1-sol",
+              "requests": 3,
+              "rawQuota": 15585,
+              "primaryCost": 0.03117,
+              "secondaryCost": 0,
+              "promptTokens": 159348,
+              "completionTokens": 6
+            },
+            {
+              "name": "gpt-5.6-terra",
+              "requests": 9,
+              "rawQuota": 10259,
+              "primaryCost": 0.020518,
+              "secondaryCost": 0,
+              "promptTokens": 231480,
+              "completionTokens": 4652
+            },
+            {
+              "name": "gpt-5.6-sol",
+              "requests": 1,
+              "rawQuota": 5765,
+              "primaryCost": 0.01153,
+              "secondaryCost": 0,
+              "promptTokens": 22977,
+              "completionTokens": 14
+            },
+            {
+              "name": "gpt-5.6-luna",
+              "requests": 1,
+              "rawQuota": 1486,
+              "primaryCost": 0.002972,
+              "secondaryCost": 0,
+              "promptTokens": 29643,
+              "completionTokens": 14
+            },
+            {
+              "name": "gpt-6-luna",
+              "requests": 4,
+              "rawQuota": 371,
+              "primaryCost": 0.000742,
+              "secondaryCost": 0,
+              "promptTokens": 7266,
+              "completionTokens": 26
+            }
+          ]
+        },
+        {
           "personId": "sqz",
           "displayName": "sqz",
           "tokenNames": [
@@ -3188,60 +3251,6 @@
               "secondaryCost": 0,
               "promptTokens": 1071458,
               "completionTokens": 23184
-            },
-            {
-              "name": "gpt-6-luna",
-              "requests": 3,
-              "rawQuota": 0,
-              "primaryCost": 0,
-              "secondaryCost": 0,
-              "promptTokens": 0,
-              "completionTokens": 0
-            }
-          ]
-        },
-        {
-          "personId": "unknown",
-          "displayName": "水下具身",
-          "tokenNames": [
-            "水下具身",
-            "工业异常"
-          ],
-          "requests": 16,
-          "rawQuota": 27330,
-          "primaryCost": 0.05466,
-          "secondaryCost": 0,
-          "promptTokens": 420471,
-          "completionTokens": 4672,
-          "cacheReadTokens": 181632,
-          "cacheWriteTokens": 0,
-          "models": [
-            {
-              "name": "gpt-6.1-sol",
-              "requests": 3,
-              "rawQuota": 15585,
-              "primaryCost": 0.03117,
-              "secondaryCost": 0,
-              "promptTokens": 159348,
-              "completionTokens": 6
-            },
-            {
-              "name": "gpt-5.6-terra",
-              "requests": 9,
-              "rawQuota": 10259,
-              "primaryCost": 0.020518,
-              "secondaryCost": 0,
-              "promptTokens": 231480,
-              "completionTokens": 4652
-            },
-            {
-              "name": "gpt-5.6-luna",
-              "requests": 1,
-              "rawQuota": 1486,
-              "primaryCost": 0.002972,
-              "secondaryCost": 0,
-              "promptTokens": 29643,
-              "completionTokens": 14
             },
             {
               "name": "gpt-6-luna",
@@ -3284,6 +3293,15 @@
           "completionTokens": 4652
         },
         {
+          "name": "gpt-5.6-sol",
+          "requests": 1,
+          "rawQuota": 5765,
+          "primaryCost": 0.01153,
+          "secondaryCost": 0,
+          "promptTokens": 22977,
+          "completionTokens": 14
+        },
+        {
           "name": "gpt-5.6-luna",
           "requests": 1,
           "rawQuota": 1486,
@@ -3291,15 +3309,6 @@
           "secondaryCost": 0,
           "promptTokens": 29643,
           "completionTokens": 14
-        },
-        {
-          "name": "gpt-6-luna",
-          "requests": 6,
-          "rawQuota": 0,
-          "primaryCost": 0,
-          "secondaryCost": 0,
-          "promptTokens": 0,
-          "completionTokens": 0
         }
       ]
     }
@@ -5097,31 +5106,31 @@
     },
     {
       "personId": "unknown",
-      "displayName": "水下具身",
+      "displayName": "工业异常",
       "tokenNames": [
-        "水下具身",
-        "工业异常"
+        "工业异常",
+        "水下具身"
       ],
       "totals": {
-        "requests": 16,
-        "rawQuota": 27330,
-        "primaryCost": 0.05466,
+        "requests": 18,
+        "rawQuota": 33466,
+        "primaryCost": 0.066932,
         "secondaryCost": 0,
-        "promptTokens": 420471,
-        "completionTokens": 4672,
-        "cacheReadTokens": 181632,
+        "promptTokens": 450714,
+        "completionTokens": 4712,
+        "cacheReadTokens": 190976,
         "cacheWriteTokens": 0
       },
       "days": [
         {
           "date": "2026-10-23",
-          "requests": 16,
-          "rawQuota": 27330,
-          "primaryCost": 0.05466,
+          "requests": 18,
+          "rawQuota": 33466,
+          "primaryCost": 0.066932,
           "secondaryCost": 0,
-          "promptTokens": 420471,
-          "completionTokens": 4672,
-          "cacheReadTokens": 181632,
+          "promptTokens": 450714,
+          "completionTokens": 4712,
+          "cacheReadTokens": 190976,
           "cacheWriteTokens": 0,
           "models": [
             {
@@ -5143,6 +5152,15 @@
               "completionTokens": 4652
             },
             {
+              "name": "gpt-5.6-sol",
+              "requests": 1,
+              "rawQuota": 5765,
+              "primaryCost": 0.01153,
+              "secondaryCost": 0,
+              "promptTokens": 22977,
+              "completionTokens": 14
+            },
+            {
               "name": "gpt-5.6-luna",
               "requests": 1,
               "rawQuota": 1486,
@@ -5153,12 +5171,12 @@
             },
             {
               "name": "gpt-6-luna",
-              "requests": 3,
-              "rawQuota": 0,
-              "primaryCost": 0,
+              "requests": 4,
+              "rawQuota": 371,
+              "primaryCost": 0.000742,
               "secondaryCost": 0,
-              "promptTokens": 0,
-              "completionTokens": 0
+              "promptTokens": 7266,
+              "completionTokens": 26
             }
           ]
         }
@@ -7121,6 +7139,70 @@
     },
     {
       "date": "2026-10-23",
+      "personId": "unknown",
+      "displayName": "工业异常",
+      "tokenNames": [
+        "工业异常",
+        "水下具身"
+      ],
+      "requests": 18,
+      "rawQuota": 33466,
+      "primaryCost": 0.066932,
+      "secondaryCost": 0,
+      "promptTokens": 450714,
+      "completionTokens": 4712,
+      "cacheReadTokens": 190976,
+      "cacheWriteTokens": 0,
+      "models": [
+        {
+          "name": "gpt-6.1-sol",
+          "requests": 3,
+          "rawQuota": 15585,
+          "primaryCost": 0.03117,
+          "secondaryCost": 0,
+          "promptTokens": 159348,
+          "completionTokens": 6
+        },
+        {
+          "name": "gpt-5.6-terra",
+          "requests": 9,
+          "rawQuota": 10259,
+          "primaryCost": 0.020518,
+          "secondaryCost": 0,
+          "promptTokens": 231480,
+          "completionTokens": 4652
+        },
+        {
+          "name": "gpt-5.6-sol",
+          "requests": 1,
+          "rawQuota": 5765,
+          "primaryCost": 0.01153,
+          "secondaryCost": 0,
+          "promptTokens": 22977,
+          "completionTokens": 14
+        },
+        {
+          "name": "gpt-5.6-luna",
+          "requests": 1,
+          "rawQuota": 1486,
+          "primaryCost": 0.002972,
+          "secondaryCost": 0,
+          "promptTokens": 29643,
+          "completionTokens": 14
+        },
+        {
+          "name": "gpt-6-luna",
+          "requests": 4,
+          "rawQuota": 371,
+          "primaryCost": 0.000742,
+          "secondaryCost": 0,
+          "promptTokens": 7266,
+          "completionTokens": 26
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
       "personId": "sqz",
       "displayName": "sqz",
       "tokenNames": [
@@ -7154,67 +7236,12 @@
           "completionTokens": 0
         }
       ]
-    },
-    {
-      "date": "2026-10-23",
-      "personId": "unknown",
-      "displayName": "水下具身",
-      "tokenNames": [
-        "水下具身",
-        "工业异常"
-      ],
-      "requests": 16,
-      "rawQuota": 27330,
-      "primaryCost": 0.05466,
-      "secondaryCost": 0,
-      "promptTokens": 420471,
-      "completionTokens": 4672,
-      "cacheReadTokens": 181632,
-      "cacheWriteTokens": 0,
-      "models": [
-        {
-          "name": "gpt-6.1-sol",
-          "requests": 3,
-          "rawQuota": 15585,
-          "primaryCost": 0.03117,
-          "secondaryCost": 0,
-          "promptTokens": 159348,
-          "completionTokens": 6
-        },
-        {
-          "name": "gpt-5.6-terra",
-          "requests": 9,
-          "rawQuota": 10259,
-          "primaryCost": 0.020518,
-          "secondaryCost": 0,
-          "promptTokens": 231480,
-          "completionTokens": 4652
-        },
-        {
-          "name": "gpt-5.6-luna",
-          "requests": 1,
-          "rawQuota": 1486,
-          "primaryCost": 0.002972,
-          "secondaryCost": 0,
-          "promptTokens": 29643,
-          "completionTokens": 14
-        },
-        {
-          "name": "gpt-6-luna",
-          "requests": 3,
-          "rawQuota": 0,
-          "primaryCost": 0,
-          "secondaryCost": 0,
-          "promptTokens": 0,
-          "completionTokens": 0
-        }
-      ]
     }
   ],
   "warnings": [
     "Token \"QGC\" is not mapped in config/people.json and will be shown as-is.",
     "Token \"sqz\" is not mapped in config/people.json and will be shown as-is.",
-    "Token \"水下具身\" is not mapped in config/people.json and will be shown as-is.",
-    "Token \"工业异常\" is not mapped in config/people.json and will be shown as-is."
+    "Token \"工业异常\" is not mapped in config/people.json and will be shown as-is.",
+    "Token \"水下具身\" is not mapped in config/people.json and will be shown as-is."
   ]
 }
