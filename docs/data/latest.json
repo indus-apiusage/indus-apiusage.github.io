@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T07:22:09.344Z",
+  "generatedAt": "2026-10-23T07:37:21.997Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -83,14 +83,14 @@
       "username": "JunhaoCai27",
       "displayName": "JunhaoCai27",
       "group": "default",
-      "requestCount": 39650,
-      "remainingRawQuota": 21631148,
-      "remainingPrimaryBalance": 43.262296,
-      "usedRawQuota": 128358291,
-      "usedPrimaryCost": 256.716582,
+      "requestCount": 39656,
+      "remainingRawQuota": 21609963,
+      "remainingPrimaryBalance": 43.219926,
+      "usedRawQuota": 128379476,
+      "usedPrimaryCost": 256.758952,
       "totalRawQuota": 149989439,
       "totalPrimaryQuota": 299.978878,
-      "utilizationRate": 0.855782,
+      "utilizationRate": 0.855923,
       "gptPlus": {
         "key": "gpt_plus",
         "ratio": 0.1,
@@ -100,12 +100,12 @@
   ],
   "summary": {
     "totalDays": 30,
-    "totalRequests": 20818,
-    "totalRawQuota": 74408221,
-    "totalPrimaryCost": 148.816442,
+    "totalRequests": 20824,
+    "totalRawQuota": 74429406,
+    "totalPrimaryCost": 148.858812,
     "totalSecondaryCost": 0,
-    "activePeople": 4,
-    "activeTokens": 4,
+    "activePeople": 5,
+    "activeTokens": 5,
     "latestDate": "2026-10-23"
   },
   "days": [
@@ -3121,13 +3121,13 @@
     },
     {
       "date": "2026-10-23",
-      "requests": 220,
-      "rawQuota": 1189961,
-      "primaryCost": 2.379922,
+      "requests": 226,
+      "rawQuota": 1211146,
+      "primaryCost": 2.422292,
       "secondaryCost": 0,
-      "promptTokens": 23013888,
-      "completionTokens": 188961,
-      "cacheReadTokens": 18818816,
+      "promptTokens": 23290791,
+      "completionTokens": 193904,
+      "cacheReadTokens": 19010048,
       "cacheWriteTokens": 0,
       "people": [
         {
@@ -3136,23 +3136,23 @@
           "tokenNames": [
             "cjh"
           ],
-          "requests": 199,
-          "rawQuota": 1160380,
-          "primaryCost": 2.32076,
+          "requests": 201,
+          "rawQuota": 1178030,
+          "primaryCost": 2.35606,
           "secondaryCost": 0,
-          "promptTokens": 21942430,
-          "completionTokens": 165777,
-          "cacheReadTokens": 17880320,
+          "promptTokens": 22168730,
+          "completionTokens": 168615,
+          "cacheReadTokens": 18040576,
           "cacheWriteTokens": 0,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 196,
-              "rawQuota": 1147042,
-              "primaryCost": 2.294084,
+              "requests": 198,
+              "rawQuota": 1164692,
+              "primaryCost": 2.329384,
               "secondaryCost": 0,
-              "promptTokens": 21840095,
-              "completionTokens": 165147
+              "promptTokens": 22066395,
+              "completionTokens": 167985
             },
             {
               "name": "codex-auto-review",
@@ -3199,17 +3199,43 @@
               "completionTokens": 0
             }
           ]
+        },
+        {
+          "personId": "unknown",
+          "displayName": "工业异常",
+          "tokenNames": [
+            "工业异常"
+          ],
+          "requests": 4,
+          "rawQuota": 3535,
+          "primaryCost": 0.00707,
+          "secondaryCost": 0,
+          "promptTokens": 50603,
+          "completionTokens": 2105,
+          "cacheReadTokens": 30976,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-5.6-terra",
+              "requests": 4,
+              "rawQuota": 3535,
+              "primaryCost": 0.00707,
+              "secondaryCost": 0,
+              "promptTokens": 50603,
+              "completionTokens": 2105
+            }
+          ]
         }
       ],
       "models": [
         {
           "name": "gpt-6.1-sol",
-          "requests": 214,
-          "rawQuota": 1176623,
-          "primaryCost": 2.353246,
+          "requests": 216,
+          "rawQuota": 1194273,
+          "primaryCost": 2.388546,
           "secondaryCost": 0,
-          "promptTokens": 22911553,
-          "completionTokens": 188331
+          "promptTokens": 23137853,
+          "completionTokens": 191169
         },
         {
           "name": "codex-auto-review",
@@ -3219,6 +3245,15 @@
           "secondaryCost": 0,
           "promptTokens": 102335,
           "completionTokens": 630
+        },
+        {
+          "name": "gpt-5.6-terra",
+          "requests": 4,
+          "rawQuota": 3535,
+          "primaryCost": 0.00707,
+          "secondaryCost": 0,
+          "promptTokens": 50603,
+          "completionTokens": 2105
         },
         {
           "name": "gpt-6-luna",
@@ -3240,35 +3275,35 @@
         "cjh"
       ],
       "totals": {
-        "requests": 16185,
-        "rawQuota": 62952956,
-        "primaryCost": 125.905912,
+        "requests": 16187,
+        "rawQuota": 62970606,
+        "primaryCost": 125.941212,
         "secondaryCost": 0,
-        "promptTokens": 1929750750,
-        "completionTokens": 11815951,
-        "cacheReadTokens": 1730725389,
+        "promptTokens": 1929977050,
+        "completionTokens": 11818789,
+        "cacheReadTokens": 1730885645,
         "cacheWriteTokens": 2594394
       },
       "days": [
         {
           "date": "2026-10-23",
-          "requests": 199,
-          "rawQuota": 1160380,
-          "primaryCost": 2.32076,
+          "requests": 201,
+          "rawQuota": 1178030,
+          "primaryCost": 2.35606,
           "secondaryCost": 0,
-          "promptTokens": 21942430,
-          "completionTokens": 165777,
-          "cacheReadTokens": 17880320,
+          "promptTokens": 22168730,
+          "completionTokens": 168615,
+          "cacheReadTokens": 18040576,
           "cacheWriteTokens": 0,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 196,
-              "rawQuota": 1147042,
-              "primaryCost": 2.294084,
+              "requests": 198,
+              "rawQuota": 1164692,
+              "primaryCost": 2.329384,
               "secondaryCost": 0,
-              "promptTokens": 21840095,
-              "completionTokens": 165147
+              "promptTokens": 22066395,
+              "completionTokens": 167985
             },
             {
               "name": "codex-auto-review",
@@ -5018,6 +5053,47 @@
               "secondaryCost": 0,
               "promptTokens": 15306,
               "completionTokens": 28
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "personId": "unknown",
+      "displayName": "工业异常",
+      "tokenNames": [
+        "工业异常"
+      ],
+      "totals": {
+        "requests": 4,
+        "rawQuota": 3535,
+        "primaryCost": 0.00707,
+        "secondaryCost": 0,
+        "promptTokens": 50603,
+        "completionTokens": 2105,
+        "cacheReadTokens": 30976,
+        "cacheWriteTokens": 0
+      },
+      "days": [
+        {
+          "date": "2026-10-23",
+          "requests": 4,
+          "rawQuota": 3535,
+          "primaryCost": 0.00707,
+          "secondaryCost": 0,
+          "promptTokens": 50603,
+          "completionTokens": 2105,
+          "cacheReadTokens": 30976,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-5.6-terra",
+              "requests": 4,
+              "rawQuota": 3535,
+              "primaryCost": 0.00707,
+              "secondaryCost": 0,
+              "promptTokens": 50603,
+              "completionTokens": 2105
             }
           ]
         }
@@ -6949,23 +7025,23 @@
       "tokenNames": [
         "cjh"
       ],
-      "requests": 199,
-      "rawQuota": 1160380,
-      "primaryCost": 2.32076,
+      "requests": 201,
+      "rawQuota": 1178030,
+      "primaryCost": 2.35606,
       "secondaryCost": 0,
-      "promptTokens": 21942430,
-      "completionTokens": 165777,
-      "cacheReadTokens": 17880320,
+      "promptTokens": 22168730,
+      "completionTokens": 168615,
+      "cacheReadTokens": 18040576,
       "cacheWriteTokens": 0,
       "models": [
         {
           "name": "gpt-6.1-sol",
-          "requests": 196,
-          "rawQuota": 1147042,
-          "primaryCost": 2.294084,
+          "requests": 198,
+          "rawQuota": 1164692,
+          "primaryCost": 2.329384,
           "secondaryCost": 0,
-          "promptTokens": 21840095,
-          "completionTokens": 165147
+          "promptTokens": 22066395,
+          "completionTokens": 167985
         },
         {
           "name": "codex-auto-review",
@@ -7013,10 +7089,38 @@
           "completionTokens": 0
         }
       ]
+    },
+    {
+      "date": "2026-10-23",
+      "personId": "unknown",
+      "displayName": "工业异常",
+      "tokenNames": [
+        "工业异常"
+      ],
+      "requests": 4,
+      "rawQuota": 3535,
+      "primaryCost": 0.00707,
+      "secondaryCost": 0,
+      "promptTokens": 50603,
+      "completionTokens": 2105,
+      "cacheReadTokens": 30976,
+      "cacheWriteTokens": 0,
+      "models": [
+        {
+          "name": "gpt-5.6-terra",
+          "requests": 4,
+          "rawQuota": 3535,
+          "primaryCost": 0.00707,
+          "secondaryCost": 0,
+          "promptTokens": 50603,
+          "completionTokens": 2105
+        }
+      ]
     }
   ],
   "warnings": [
     "Token \"QGC\" is not mapped in config/people.json and will be shown as-is.",
-    "Token \"sqz\" is not mapped in config/people.json and will be shown as-is."
+    "Token \"sqz\" is not mapped in config/people.json and will be shown as-is.",
+    "Token \"工业异常\" is not mapped in config/people.json and will be shown as-is."
   ]
 }
