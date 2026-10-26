@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-26T13:01:30.871Z",
+  "generatedAt": "2026-10-26T13:16:58.991Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -83,14 +83,14 @@
       "username": "JunhaoCai27",
       "displayName": "JunhaoCai27",
       "group": "default",
-      "requestCount": 42667,
-      "remainingRawQuota": 48786797,
-      "remainingPrimaryBalance": 97.573594,
-      "usedRawQuota": 151202642,
-      "usedPrimaryCost": 302.405284,
-      "totalRawQuota": 199989439,
-      "totalPrimaryQuota": 399.978878,
-      "utilizationRate": 0.756053,
+      "requestCount": 42692,
+      "remainingRawQuota": 48752441,
+      "remainingPrimaryBalance": 97.504882,
+      "usedRawQuota": 151230801,
+      "usedPrimaryCost": 302.461602,
+      "totalRawQuota": 199983242,
+      "totalPrimaryQuota": 399.966484,
+      "utilizationRate": 0.756217,
       "gptPlus": {
         "key": "gpt_plus",
         "ratio": 0.065,
@@ -100,9 +100,9 @@
   ],
   "summary": {
     "totalDays": 30,
-    "totalRequests": 21989,
-    "totalRawQuota": 91977367,
-    "totalPrimaryCost": 183.954734,
+    "totalRequests": 22014,
+    "totalRawQuota": 92005526,
+    "totalPrimaryCost": 184.011052,
     "totalSecondaryCost": 0,
     "activePeople": 5,
     "activeTokens": 6,
@@ -3221,13 +3221,13 @@
     },
     {
       "date": "2026-10-26",
-      "requests": 1132,
-      "rawQuota": 7507998,
-      "primaryCost": 15.015996,
+      "requests": 1157,
+      "rawQuota": 7536157,
+      "primaryCost": 15.072314,
       "secondaryCost": 0,
-      "promptTokens": 159315319,
-      "completionTokens": 1386779,
-      "cacheReadTokens": 122840578,
+      "promptTokens": 161372009,
+      "completionTokens": 1403364,
+      "cacheReadTokens": 124636802,
       "cacheWriteTokens": 0,
       "people": [
         {
@@ -3316,17 +3316,43 @@
               "completionTokens": 25
             }
           ]
+        },
+        {
+          "personId": "unknown",
+          "displayName": "水下具身",
+          "tokenNames": [
+            "水下具身"
+          ],
+          "requests": 25,
+          "rawQuota": 28159,
+          "primaryCost": 0.056318,
+          "secondaryCost": 0,
+          "promptTokens": 2056690,
+          "completionTokens": 16585,
+          "cacheReadTokens": 1796224,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-6.1-sol",
+              "requests": 25,
+              "rawQuota": 28159,
+              "primaryCost": 0.056318,
+              "secondaryCost": 0,
+              "promptTokens": 2056690,
+              "completionTokens": 16585
+            }
+          ]
         }
       ],
       "models": [
         {
           "name": "gpt-6.1-sol",
-          "requests": 1131,
-          "rawQuota": 7507496,
-          "primaryCost": 15.014992,
+          "requests": 1156,
+          "rawQuota": 7535655,
+          "primaryCost": 15.07131,
           "secondaryCost": 0,
-          "promptTokens": 159300009,
-          "completionTokens": 1386754
+          "promptTokens": 161356699,
+          "completionTokens": 1403339
         },
         {
           "name": "gpt-6-luna",
@@ -5166,16 +5192,38 @@
         "水下具身"
       ],
       "totals": {
-        "requests": 18,
-        "rawQuota": 33466,
-        "primaryCost": 0.066932,
+        "requests": 43,
+        "rawQuota": 61625,
+        "primaryCost": 0.12325,
         "secondaryCost": 0,
-        "promptTokens": 450714,
-        "completionTokens": 4712,
-        "cacheReadTokens": 190976,
+        "promptTokens": 2507404,
+        "completionTokens": 21297,
+        "cacheReadTokens": 1987200,
         "cacheWriteTokens": 0
       },
       "days": [
+        {
+          "date": "2026-10-26",
+          "requests": 25,
+          "rawQuota": 28159,
+          "primaryCost": 0.056318,
+          "secondaryCost": 0,
+          "promptTokens": 2056690,
+          "completionTokens": 16585,
+          "cacheReadTokens": 1796224,
+          "cacheWriteTokens": 0,
+          "models": [
+            {
+              "name": "gpt-6.1-sol",
+              "requests": 25,
+              "rawQuota": 28159,
+              "primaryCost": 0.056318,
+              "secondaryCost": 0,
+              "promptTokens": 2056690,
+              "completionTokens": 16585
+            }
+          ]
+        },
         {
           "date": "2026-10-23",
           "requests": 18,
@@ -7315,6 +7363,33 @@
           "secondaryCost": 0,
           "promptTokens": 15310,
           "completionTokens": 25
+        }
+      ]
+    },
+    {
+      "date": "2026-10-26",
+      "personId": "unknown",
+      "displayName": "水下具身",
+      "tokenNames": [
+        "水下具身"
+      ],
+      "requests": 25,
+      "rawQuota": 28159,
+      "primaryCost": 0.056318,
+      "secondaryCost": 0,
+      "promptTokens": 2056690,
+      "completionTokens": 16585,
+      "cacheReadTokens": 1796224,
+      "cacheWriteTokens": 0,
+      "models": [
+        {
+          "name": "gpt-6.1-sol",
+          "requests": 25,
+          "rawQuota": 28159,
+          "primaryCost": 0.056318,
+          "secondaryCost": 0,
+          "promptTokens": 2056690,
+          "completionTokens": 16585
         }
       ]
     }
