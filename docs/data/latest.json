@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-11T03:54:54.590Z",
+  "generatedAt": "2026-11-11T04:10:10.304Z",
   "source": {
     "baseUrl": "https://www.foropencode.com",
     "scope": "self",
@@ -83,14 +83,14 @@
       "username": "JunhaoCai27",
       "displayName": "JunhaoCai27",
       "group": "default",
-      "requestCount": 57387,
-      "remainingRawQuota": 55477937,
-      "remainingPrimaryBalance": 110.955874,
-      "usedRawQuota": 194511502,
-      "usedPrimaryCost": 389.023004,
+      "requestCount": 57429,
+      "remainingRawQuota": 55435313,
+      "remainingPrimaryBalance": 110.870626,
+      "usedRawQuota": 194554126,
+      "usedPrimaryCost": 389.108252,
       "totalRawQuota": 249989439,
       "totalPrimaryQuota": 499.978878,
-      "utilizationRate": 0.778079,
+      "utilizationRate": 0.778249,
       "gptPlus": {
         "key": "gpt_plus",
         "ratio": 0.065,
@@ -100,9 +100,9 @@
   ],
   "summary": {
     "totalDays": 30,
-    "totalRequests": 26699,
-    "totalRawQuota": 103223227,
-    "totalPrimaryCost": 206.446454,
+    "totalRequests": 26741,
+    "totalRawQuota": 103265851,
+    "totalPrimaryCost": 206.531702,
     "totalSecondaryCost": 0,
     "activePeople": 5,
     "activeTokens": 6,
@@ -3770,13 +3770,13 @@
     },
     {
       "date": "2026-11-11",
-      "requests": 198,
-      "rawQuota": 721948,
-      "primaryCost": 1.443896,
+      "requests": 240,
+      "rawQuota": 764572,
+      "primaryCost": 1.529144,
       "secondaryCost": 0,
-      "promptTokens": 25481077,
-      "completionTokens": 207157,
-      "cacheReadTokens": 22091648,
+      "promptTokens": 29902879,
+      "completionTokens": 230612,
+      "cacheReadTokens": 26179328,
       "cacheWriteTokens": 0,
       "people": [
         {
@@ -3820,28 +3820,37 @@
           "tokenNames": [
             "zdy"
           ],
-          "requests": 28,
-          "rawQuota": 40585,
-          "primaryCost": 0.08117,
+          "requests": 70,
+          "rawQuota": 83209,
+          "primaryCost": 0.166418,
           "secondaryCost": 0,
-          "promptTokens": 1993390,
-          "completionTokens": 31119,
-          "cacheReadTokens": 1604864,
+          "promptTokens": 6415192,
+          "completionTokens": 54574,
+          "cacheReadTokens": 5692544,
           "cacheWriteTokens": 0,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 28,
-              "rawQuota": 40585,
-              "primaryCost": 0.08117,
+              "requests": 70,
+              "rawQuota": 83209,
+              "primaryCost": 0.166418,
               "secondaryCost": 0,
-              "promptTokens": 1993390,
-              "completionTokens": 31119
+              "promptTokens": 6415192,
+              "completionTokens": 54574
             }
           ]
         }
       ],
       "models": [
+        {
+          "name": "gpt-6.1-sol",
+          "requests": 195,
+          "rawQuota": 401559,
+          "primaryCost": 0.803118,
+          "secondaryCost": 0,
+          "promptTokens": 24582443,
+          "completionTokens": 170305
+        },
         {
           "name": "gpt-6-astra",
           "requests": 45,
@@ -3850,15 +3859,6 @@
           "secondaryCost": 0,
           "promptTokens": 5320436,
           "completionTokens": 60307
-        },
-        {
-          "name": "gpt-6.1-sol",
-          "requests": 153,
-          "rawQuota": 358935,
-          "primaryCost": 0.71787,
-          "secondaryCost": 0,
-          "promptTokens": 20160641,
-          "completionTokens": 146850
         }
       ]
     }
@@ -4749,35 +4749,35 @@
         "zdy"
       ],
       "totals": {
-        "requests": 6186,
-        "rawQuota": 11162100,
-        "primaryCost": 22.3242,
+        "requests": 6228,
+        "rawQuota": 11204724,
+        "primaryCost": 22.409448,
         "secondaryCost": 0,
-        "promptTokens": 567387676,
-        "completionTokens": 3508369,
-        "cacheReadTokens": 494083124,
+        "promptTokens": 571809478,
+        "completionTokens": 3531824,
+        "cacheReadTokens": 498170804,
         "cacheWriteTokens": 4982709
       },
       "days": [
         {
           "date": "2026-11-11",
-          "requests": 28,
-          "rawQuota": 40585,
-          "primaryCost": 0.08117,
+          "requests": 70,
+          "rawQuota": 83209,
+          "primaryCost": 0.166418,
           "secondaryCost": 0,
-          "promptTokens": 1993390,
-          "completionTokens": 31119,
-          "cacheReadTokens": 1604864,
+          "promptTokens": 6415192,
+          "completionTokens": 54574,
+          "cacheReadTokens": 5692544,
           "cacheWriteTokens": 0,
           "models": [
             {
               "name": "gpt-6.1-sol",
-              "requests": 28,
-              "rawQuota": 40585,
-              "primaryCost": 0.08117,
+              "requests": 70,
+              "rawQuota": 83209,
+              "primaryCost": 0.166418,
               "secondaryCost": 0,
-              "promptTokens": 1993390,
-              "completionTokens": 31119
+              "promptTokens": 6415192,
+              "completionTokens": 54574
             }
           ]
         },
@@ -8862,23 +8862,23 @@
       "tokenNames": [
         "zdy"
       ],
-      "requests": 28,
-      "rawQuota": 40585,
-      "primaryCost": 0.08117,
+      "requests": 70,
+      "rawQuota": 83209,
+      "primaryCost": 0.166418,
       "secondaryCost": 0,
-      "promptTokens": 1993390,
-      "completionTokens": 31119,
-      "cacheReadTokens": 1604864,
+      "promptTokens": 6415192,
+      "completionTokens": 54574,
+      "cacheReadTokens": 5692544,
       "cacheWriteTokens": 0,
       "models": [
         {
           "name": "gpt-6.1-sol",
-          "requests": 28,
-          "rawQuota": 40585,
-          "primaryCost": 0.08117,
+          "requests": 70,
+          "rawQuota": 83209,
+          "primaryCost": 0.166418,
           "secondaryCost": 0,
-          "promptTokens": 1993390,
-          "completionTokens": 31119
+          "promptTokens": 6415192,
+          "completionTokens": 54574
         }
       ]
     }
